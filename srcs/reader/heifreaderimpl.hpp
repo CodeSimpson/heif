@@ -486,20 +486,20 @@ namespace HEIF
         static MetaBoxProperties extractMetaBoxProperties(const MetaBox& metaBox);
 
         /**
-         * @brief Create a MetaBoxFeature struct for the reader interface
+         * @brief Create a MetaBoxFeature struct for the reader interface，返回描述整个MetaBox特性的MetaBoxFeature对象
          * @param imageFeatures Previously extracted ImageFeaturesMap
          * @param groupings     Previously extracted groupings
          * @return Filled MetaBoxProperties */
         static MetaBoxFeature extractMetaBoxFeatures(const ItemFeaturesMap& imageFeatures, const Groupings& groupings);
 
         /**
-         * @brief Create a GroupingMap struct for the reader interface
+         * @brief Create a GroupingMap struct for the reader interface，提取实体到分组的映射关系
          * @param metaBox MetaBox to get information from
          * @return Filled GroupingMap */
         static Groupings extractMetaBoxEntityToGroupMaps(const MetaBox& metaBox);
 
         /**
-         * @brief Create a ItemFeaturesMap struct for the reader interface
+         * @brief Create a ItemFeaturesMap struct for the reader interface，从HEIF的metaBox中提取所有项item和元数据项的特征属性，构建ItemId --> 特征标记 映射表
          * @param metaBox MetaBox to get information from
          * @return Filled ItemFeaturesMap */
         static ItemFeaturesMap extractMetaBoxItemPropertiesMap(const MetaBox& metaBox);

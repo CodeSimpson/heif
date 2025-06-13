@@ -91,7 +91,7 @@ namespace HEIF
     {
         ErrorCode rc;
         auto& io = mFileStream;
-        io.fileStream.reset(openFile(fileName));
+        io.fileStream.reset(openFile(fileName));        // std::unique_ptr::reset() 接管新对象StreamInterface
         rc = initialize(&*io.fileStream);
         if (rc != ErrorCode::OK)
         {
@@ -112,7 +112,7 @@ namespace HEIF
         reset();
 
         SegmentId segmentId = 0;  // Initialization segment id
-        auto& io            = mFileProperties.segmentPropertiesMap[segmentId].io;
+        auto& io            = mFileProperties.segmentPropertiesMap[segmentId].io;   // io是什么？
         io.stream           = std::move(internalStream);
         io.size             = io.stream->size();
 
@@ -799,7 +799,7 @@ namespace HEIF
         mState          = State::INITIALIZING;
 
         StreamIO& io = mFileProperties.segmentPropertiesMap.at(0).io;
-        if (io.stream->peekEof())
+        if (io.stream->peekEof())           // 检查是否已到达文件尾，到达返回true，未到达返回false
         {
             mState = prevState;
             io.stream.reset();
@@ -820,7 +820,7 @@ namespace HEIF
 
         try
         {
-            while ((error == ErrorCode::OK) && !io.stream->peekEof())
+            while ((error == ErrorCode::OK) && !io.stream->peekEof())       // 循环读取heif图对应的bitStream
             {
                 String boxType;
                 std::int64_t boxSize = 0;
@@ -828,7 +828,7 @@ namespace HEIF
                 error = readBoxParameters(io, boxType, boxSize);
                 if (error == ErrorCode::OK)
                 {
-                    if (boxType == "ftyp")
+                    if (boxType == "ftyp")                      // ftyp: 文件类型框File Type Box，用于指示HEIF文件的类型和兼容性信息
                     {
                         if (ftypFound)
                         {
@@ -837,7 +837,7 @@ namespace HEIF
                         ftypFound = true;
                         error     = handleFtyp(io);
                     }
-                    else if (boxType == "etyp")
+                    else if (boxType == "etyp")                 // etyp: 外部类型External Type Box，声明文件可能依赖或关联的外部数据源类型
                     {
                         if (!ftypFound || etypFound)
                         {
@@ -846,7 +846,7 @@ namespace HEIF
                         etypFound = true;
                         error     = handleEtyp(io);
                     }
-                    else if (boxType == "meta")
+                    else if (boxType == "meta")                 // meta：元数据容器，核心信息枢纽，负责组织和管理图像的所有元数据与结构信息
                     {
                         if (metaFound)
                         {
@@ -855,7 +855,7 @@ namespace HEIF
                         metaFound = true;
                         error     = handleMeta(io);
                     }
-                    else if (boxType == "moov")
+                    else if (boxType == "moov")                 // moov：电影盒movie box，存储媒体数据的时间线、轨道结构和全局元信息
                     {
                         if (moovFound)
                         {
@@ -1057,16 +1057,17 @@ namespace HEIF
 
     ErrorCode HeifReaderImpl::readBoxParameters(StreamIO& io, String& boxType, std::int64_t& boxSize)
     {
+        // 记录文件起始位置
         const std::int64_t startLocation = io.stream->tell();
 
-        // Read the 32-bit length field of the box
+        // Read the 32-bit length field of the box，先读前4个字节，获得当前box的长度
         ErrorCode error = readBytes(io, 4, boxSize);
         if (error != ErrorCode::OK)
         {
             return error;
         }
 
-        // Read the four character string for boxType
+        // Read the four character string for boxType，再读4个字节，获得当前box的type
         static const size_t TYPE_LENGTH = 4;
         boxType.resize(TYPE_LENGTH);
         io.stream->read(&boxType[0], TYPE_LENGTH);
@@ -1075,7 +1076,7 @@ namespace HEIF
             return ErrorCode::FILE_READ_ERROR;
         }
 
-        // Check if 64-bit largesize field is used
+        // Check if 64-bit largesize field is used，针对64位扩张长度的特殊情况，当boxSize == 1时，表示实际长度存储在后续8字节中，称为largesize
         if (boxSize == 1)
         {
             error = readBytes(io, 8, boxSize);
@@ -1085,13 +1086,14 @@ namespace HEIF
             }
         }
 
+        // 边界检查，最小合法box必须包含size(4字节) + type(4字节)，总长度不能小于8字节。
         int64_t boxEndOffset = startLocation + boxSize;
         if (boxSize < 8 || (boxEndOffset < 8) || ((io.size > 0) && (boxEndOffset > io.size)))
         {
             return ErrorCode::FILE_READ_ERROR;
         }
 
-        // Seek to box beginning
+        // Seek to box beginning，回到起始位置
         seekInput(io, startLocation);
         if (!io.stream->good())
         {
@@ -1331,12 +1333,12 @@ namespace HEIF
                                                           const Groupings& groupings)
     {
         MetaBoxFeature metaBoxFeature;
-
+        // 处理分组信息
         if (!groupings.empty())
         {
             metaBoxFeature.setFeature(MetaBoxFeatureEnum::HasGroupLists);
         }
-
+        // 判断图像数量类型
         if (imageFeatures.size() == 1)
         {
             metaBoxFeature.setFeature(MetaBoxFeatureEnum::IsSingleImage);
@@ -1345,7 +1347,7 @@ namespace HEIF
         {
             metaBoxFeature.setFeature(MetaBoxFeatureEnum::IsImageCollection);
         }
-
+        // 遍历所有图像项的特征
         for (const auto& i : imageFeatures)
         {
             const ItemFeature features = i.second;
@@ -1400,7 +1402,7 @@ namespace HEIF
     {
         ItemFeaturesMap itemFeaturesMap;
         const auto& itemIds = metaBox.getItemInfoBox().getItemIds();
-
+        // 遍历meta Box中每个item（图像或元数据项）
         for (const auto itemId : itemIds)
         {
             const ItemInfoEntry& item = metaBox.getItemInfoBox().getItemById(itemId);
@@ -1408,73 +1410,76 @@ namespace HEIF
             ItemFeature itemFeatures;
             if (isImageItem(makeItemInfo(item)))
             {
+                // 判断某个item是否应用了数据版权管理DRM或加密措施，主要用于付费图库、数字出版物等
                 if (item.getItemProtectionIndex() > 0)
                 {
                     itemFeatures.setFeature(ItemFeatureEnum::IsProtected);
                 }
-
+                // 检查itemId项是否存在从当前item出发的类型为'pred'的主动引用
                 if (doReferencesFromItemIdExist(metaBox, itemId, FourCCInt("pred")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsPredictivelyCodedImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsPredictivelyCodedImage); // 标记该图像是预测编码的，表示该图像需要参考其他图像才能正确解码
                 }
+                // 检查itemId项是否存在从当前item出发的类型为'thmb'的主动引用
                 if (doReferencesFromItemIdExist(metaBox, itemId, FourCCInt("thmb")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsThumbnailImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsThumbnailImage);         // 标记该图像是缩略图，并通过thmb引用指向主图像
                 }
                 if (doReferencesFromItemIdExist(metaBox, itemId, FourCCInt("auxl")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsAuxiliaryImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsAuxiliaryImage);         // 标记该图像为辅助图像，并通过auxl引用指向主图像
                 }
                 if (doReferencesFromItemIdExist(metaBox, itemId, FourCCInt("base")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsPreComputedDerivedImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsPreComputedDerivedImage);// 标记该图像为预计算派生图像，表示该图是通过离线处理生成的静态版本，派生图像通过base引用指向原始图像
                 }
                 if (doReferencesFromItemIdExist(metaBox, itemId, FourCCInt("dimg")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsDerivedImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsDerivedImage);           // 标记该图像为动态派生图像，表示该图像需运行时动态合成，通过dimg引用指向依赖的源图像
                 }
                 // Is this master image (<=> not a thumb and not an auxiliary image)
                 if (!itemFeatures.hasFeature(ItemFeatureEnum::IsThumbnailImage) &&
                     !itemFeatures.hasFeature(ItemFeatureEnum::IsAuxiliaryImage))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsMasterImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsMasterImage);            // 广义主图，经过主图生成的派生图也算作主图
                 }
 
+                // 检查当前itemId是否被缩略图引用，即是否存在其他缩略图将其作为主图关联
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("thmb")))
                 {
                     itemFeatures.setFeature(ItemFeatureEnum::HasLinkedThumbnails);
                 }
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("auxl")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedAuxiliaryImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedAuxiliaryImage);  // 当前项被辅助图像（如深度图、Alpha通道）引用，当前项作为主图
                 }
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("cdsc")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedMetadata);
+                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedMetadata);        // 当前项被元数据项（如exif、xmp）引用，描述其属性
                 }
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("base")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedPreComputedDerivedImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedPreComputedDerivedImage); // 当前项被预计算派生图像引用，当前项作为源图像
                 }
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("tbas")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedTiles);
+                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedTiles);           // 当前项被分块图像引用，作为分块基础
                 }
                 if (doReferencesToItemIdExist(metaBox, itemId, FourCCInt("dimg")))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedDerivedImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::HasLinkedDerivedImage);    // 当前项被动态派生图像引用，作为输入图
                 }
 
                 if (metaBox.getPrimaryItemBox().getItemId() == itemId)
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsPrimaryImage);
-                    itemFeatures.setFeature(ItemFeatureEnum::IsCoverImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsPrimaryImage);           // 当前项为主项图，其可能是master image，也可能是其他图像
+                    itemFeatures.setFeature(ItemFeatureEnum::IsCoverImage);             // 当前项为封面图，大多数HEIF文件将PrimaryItem直接作为封面图
                 }
 
                 static const uint32_t HIDDEN_IMAGE_MASK = 0x1;
                 if ((item.getFlags() & HIDDEN_IMAGE_MASK) != 0u)
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsHiddenImage);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsHiddenImage);            // 当前项不应被默认渲染或展示，如预计算资源gainmap图
                 }
             }
             else
@@ -1485,14 +1490,16 @@ namespace HEIF
                     itemFeatures.setFeature(ItemFeatureEnum::IsProtected);
                 }
 
+                // cdsc非Meta box的子box，而是属于子box iref的一个引用类型，iref用来描述引用关系，cdsc表示内容描述引用，auxl表示辅助图像引用
                 if (doReferencesFromItemIdExist(metaBox, itemId, "cdsc"))
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsMetadataItem);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsMetadataItem);   // 该项为元数据项，元数据项是MetaBox的一个具体Item，MetaBox还包括图像项、引用关系、其他配置信息
                 }
 
+                // 这里通过Item type对元数据进行细化分类，与通过引用cdsc标记的IsMetadataItem属于不同层级的判断
                 if (type == "Exif")
                 {
-                    itemFeatures.setFeature(ItemFeatureEnum::IsExifItem);
+                    itemFeatures.setFeature(ItemFeatureEnum::IsExifItem);       // IsExifItem属于技术格式，IsMetadataItem属于业务属性，倆者不冲突，可以同时表示同一个item
                 }
                 else if (type == "mime")
                 {
@@ -1505,22 +1512,23 @@ namespace HEIF
                         itemFeatures.setFeature(ItemFeatureEnum::IsMPEG7Item);
                     }
                 }
-                else if (type == "hvt1")
+                else if (type == "hvt1")    // 分块编码的HEVC图像
                 {
                     itemFeatures.setFeature(ItemFeatureEnum::IsTileImageItem);
                 }
             }
 
             {
-                const auto& iprp              = metaBox.getItemPropertiesBox();
-                const std::uint32_t rrefIndex = iprp.findPropertyIndex(ItemPropertiesBox::PropertyType::RREF, itemId);
+                const auto& iprp              = metaBox.getItemPropertiesBox(); // 获得Meta Box中的Item属性容器（ItemPropertiesBox）
+                // RREF：HEIF标准中定义的属性，表示当前Item必须被其他Item通过指定引用类型（如thmb、auxl）引用，例如一个缩略图item要求主图像必需通过thmb引用它，否则视为不合法
+                const std::uint32_t rrefIndex = iprp.findPropertyIndex(ItemPropertiesBox::PropertyType::RREF, itemId);  // 查找当前Item的RequiredReferenceTypesProperty（RREF属性）索引
                 if (rrefIndex != 0u)
                 {
                     auto rref =
-                        static_cast<const RequiredReferenceTypesProperty*>(iprp.getPropertyByIndex(rrefIndex - 1));
-                    auto referenceTypes                                     = rref->getReferenceTypes();
+                        static_cast<const RequiredReferenceTypesProperty*>(iprp.getPropertyByIndex(rrefIndex - 1)); // 获取RREF属性对象
+                    auto referenceTypes                                     = rref->getReferenceTypes();            // 获取该属性定义的引用类型列表
                     static const vector<FourCCInt> EXPECTED_REFERENCE_TYPES = {"auxl", "base", "thmb",
-                                                                               "exbl", "tbas", "pred"};
+                                                                               "exbl", "tbas", "pred"};             // 允许引用类型集合
                     for (const auto referenceType : referenceTypes)
                     {
                         if (find(EXPECTED_REFERENCE_TYPES.cbegin(), EXPECTED_REFERENCE_TYPES.cend(), referenceType) ==
@@ -3669,8 +3677,11 @@ namespace HEIF
 
     bool doReferencesFromItemIdExist(const MetaBox& metaBox, const ImageId itemId, const FourCCInt& referenceType)
     {
+        // 获取所有指定类型的引用关系
         const Vector<SingleItemTypeReferenceBox>& references =
             metaBox.getItemReferenceBox().getReferencesOfType(FourCCInt(referenceType));
+        
+        // 遍历检查是否存在从当前itemId出发的该类型引用
         for (const auto& singleItemTypeReferenceBox : references)
         {
             if (singleItemTypeReferenceBox.getFromItemID() == itemId)
@@ -3685,6 +3696,8 @@ namespace HEIF
     {
         const Vector<SingleItemTypeReferenceBox>& references =
             metaBox.getItemReferenceBox().getReferencesOfType(FourCCInt(referenceType));
+
+        // 遍历检查是否存在以当前item作为目标的指定类型引用
         for (const auto& singleItemTypeReferenceBox : references)
         {
             const Vector<uint32_t>& toIds = singleItemTypeReferenceBox.getToItemIds();
