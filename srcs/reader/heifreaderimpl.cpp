@@ -1679,27 +1679,28 @@ namespace HEIF
     {
         MetaBoxInfo metaBoxInfo;
         const auto& itemIds = metaBox.getItemInfoBox().getItemIds();
+        // 根据itemId遍历metabox中的所有item，同extractMetaBoxProperties()
         for (const auto itemId : itemIds)
         {
             const ItemInfoEntry& item = metaBox.getItemInfoBox().getItemById(itemId);
             const auto type           = item.getItemType();
-            if (type == "grid" || type == "iovl")
+            if (type == "grid" || type == "iovl")               // grid: 网格图像, iovl: 图像覆盖
             {
                 bool isProtected = false;
                 ErrorCode error  = getProtection(itemId, isProtected);
-                if (error != ErrorCode::OK || isProtected)
+                if (error != ErrorCode::OK || isProtected)      // 读取出错或项目受保护则跳过当前项
                 {
                     continue;
                 }
 
                 BitStream bitstream;
-                error = loadItemData(metaBox, itemId, bitstream.getStorage());
+                error = loadItemData(metaBox, itemId, bitstream.getStorage());  // 加载项目数据到bitstream中
                 if (error != ErrorCode::OK)
                 {
                     continue;
                 }
 
-                if (type == "grid")
+                if (type == "grid") // 网格图
                 {
                     const ImageGrid& imageGrid = parseImageGrid(bitstream);
                     Grid grid;
@@ -1710,7 +1711,7 @@ namespace HEIF
                     getReferencedFromItemListByType(itemId, "dimg", grid.imageIds);
                     metaBoxInfo.gridItems.insert({itemId, grid});
                 }
-                if (type == "iovl")
+                if (type == "iovl") //覆盖图
                 {
                     const ImageOverlay& imageOverlay = parseImageOverlay(bitstream);
                     Overlay iovl;

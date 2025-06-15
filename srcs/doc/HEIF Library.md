@@ -1,3 +1,5 @@
+
+
 ## HEIF Library
 
 ### 1. 代码分析
@@ -10,7 +12,7 @@
 
 * `meta` box解析函数分析
 
-  HeifReaderImpl::handleMeta(StreamIO& io) 
+  **HeifReaderImpl::handleMeta(StreamIO& io) **
 
   ```c++
   HeifReaderImpl::handleMeta()
@@ -26,7 +28,16 @@
       --->HeifReaderImpl::extractMetaBoxEntityToGroupMaps()
       	--->MetaBox::getGroupsListBox()::getEntityToGroupsBoxes()	// 提取实体（Entity）到分组（Group）的映射关系，一张图片就是一个实体
       --->HeifReaderImpl::extractMetaBoxFeatures()	// 返回描述整个MetaBox特性的MetaBoxFeature对象
-      
+  --->HeifReaderImpl::extractItems()	// return MetaBoxInfo
+     	--->loadItemData()				// 加载Item对应的数据到bitsteam结构体中
+      --->type == "grid"				// 解析网格图参数
+      	parseImageGrid()
+      	getReferencedFromItemListByType()	// 获得dimg((Drived Image Reference)引用类型指向的基础图像的itemIds
+      --->type == "iovl"				// 解析覆盖图参数
+      	parseImageOverlay()
+      	getReferencedFromItemListByType()
+      --->processItemProperties()		// 
+      --->extractItemInfoMap()		//
   ```
   
   meta相关数据结构
@@ -49,9 +60,70 @@
   }
   ```
   
+  ```c++
+  struct MetaBoxInfo {
+  	unsigned int displayableMasterImages
+      ItemInfoMap == Map<ImageId, ItemInfo>
+          ItemInfo {
+          	ForCCInt type
+              String name
+              String contentype
+              String contenEncoding
+              uint32_t width
+              uint32_t height
+              uint64_t displayTime
+      	}
+      Map<ImageId, Grid>						// 保存itemId与其对应的网格图
+          Grid {
+          	uint32_t outputWidth			// 网格整体输出的宽度
+              uint32_t outputHeight			// 网格整体输出的高度
+              uint32_t columns				// 网格行数，存储时减1，使用时加1
+              uint32_t rows					// 网格列数，存储时减1，使用时加1
+              Array<ImageId> imageIds			// 网格图引用的图像ID
+      	}
+      Map<ImageId, Overlay>					// 保存itemId与其对对应的覆盖图
+          Overlay {
+          	uint16_t r						// 画布填充色
+              uint16_t g
+              uint16_t b
+              uint16_t a
+              uint32_t outputWidth			// 画布宽度
+              init32_t outputHeight			// 画布高度
+              Array<offset> offset
+                  offset {
+                  	int32_t horizontal		// 子图像水平偏移
+                      int32_t vertical		// 子图像垂直偏移
+              	}
+              Array<ImageId> imageIds			// 覆盖图对应的的图像ID
+      	}
+      Properties == Map<uint32_t, PropertyTypeVector>
+          PropertyTypeVector == Vector<ItemPropertyInfo>
+          	ItemPropertyInfo {
+          		ItemPropertyType
+                  PropertyId == uint32_t
+                  bool essential
+      		}
+  }
+  ```
+  
   
 
 ### 2. Box类型及作用
+
+HEIF文件结构层级：
+
+```c++
+File
+├── ftyp (File Type Box)
+├── meta (MetaBox, 元数据容器) ← 我们讨论的上下文
+│   ├── iinf (ItemInfoBox)       // 存储项目信息
+│   ├── iloc (ItemLocationBox)   // 存储项目数据位置
+│   ├── iprp (ItemPropertiesBox) // 项目属性
+│   └── idat (ItemDataBox)       // 实际项目数据
+└── mdat (Media Data Box)        // 可能的外部媒体数据
+```
+
+
 
 #### 2.1 ftyp box
 
@@ -130,20 +202,20 @@ mp4dump *.heic | grep -A 3 "ftyp"
 * 资源定位
   - 通过`iloc` Box记录每个图像项在文件中的物理位置和大小，实现快速数据访问。
 
-**关键子box：**
+##### 2.3.1 关键子box
 
 `meta`box通过嵌套子box实现具体功能：
 
-| 子Box类型  | 作用描述                                                     |
-| ---------- | ------------------------------------------------------------ |
-| **`hdlr`** | 声明元数据用途（如 `pict` 表示图像元数据，`Exif` 表示Exif数据容器）。 |
-| **`pitm`** | **主图像项标识** ：指定默认显示的图像项ID（如主图的`item_ID`）。 |
-| **`iloc`** | **数据位置索引** ：记录每个图像项在文件中的存储偏移量、长度及编码方式。 |
-| **`iinf`** | **图像项信息表** ：列出所有图像项的类型（如`hvc1`/`av01`）、属性及基础描述。 |
-| **`iref`** | **项引用关系** ：定义图像项间的依赖（如缩略图引用主图、Alpha通道关联主图）。包含不同的引用类型，如cdsc，表示内容描述引用，auxl表示辅助图像引用。 |
-| **`iprp`** | **属性容器** ：包含图像项的编码参数（如HEVC的`hvcC`）、旋转、色彩属性等。 |
-| **`Exif`** | 嵌套存储Exif元数据（需通过`hdlr`声明类型为`Exif`）。         |
-| **`grpl`** |                                                              |
+| 子Box类型                     | 作用描述                                                     |
+| ----------------------------- | ------------------------------------------------------------ |
+| **`hdlr(HandlerBox)`**        | 声明元数据用途（如 `pict` 表示图像元数据，`Exif` 表示Exif数据容器）。 |
+| **`pitm(PrimaryItemBox)`**    | **主图像项标识** ：指定默认显示的图像项ID（如主图的`item_ID`）。 |
+| **`iloc(ItemLocationBox)`**   | **数据位置索引** ：记录每个图像项在文件中的存储偏移量、长度及编码方式。 |
+| **`iinf(ItemInfoBox)`**       | **图像项信息表** ：列出所有图像项的类型（如`hvc1`/`av01`）、属性及基础描述。 |
+| **`iref(ItemReferenceBox)`**  | **项引用关系** ：定义图像项间的依赖（如缩略图引用主图、Alpha通道关联主图）。包含不同的引用类型，如cdsc，表示内容描述引用，auxl表示辅助图像引用。 |
+| **`iprp(ItemPropertiesBox)`** | **属性容器** ：包含图像项的编码参数（如HEVC的`hvcC`）、旋转、色彩属性等。 |
+| **`Exif`**                    | 嵌套存储Exif元数据（需通过`hdlr`声明类型为`Exif`）。         |
+| **`grpl(GroupsListBox)`**     | 用于定义文件中的分组逻辑。                                   |
 
 **结构示例：**
 
@@ -161,7 +233,7 @@ meta
     └── hvcC (HEVC配置参数)       // 主图的解码配置
 ```
 
-##### 2.3.1 子box grpl
+##### 2.3.2  grpl(GroupsListBox)
 
 根据HEIF（ISO/IEC 23008-12）标准，`GroupsListBox`（FourCC为`grpl`）是`MetaBox`的子Box之一，用于定义文件中的分组逻辑。
 
@@ -171,7 +243,7 @@ meta
 
 * 分组类型：
 
-  * **`'altr'`**，Alternate Group，表示同一内容的不同版本，如不同分辨率或编码格式的图片。
+  * **`altr`**，Alternate Group，表示同一内容的不同版本，如不同分辨率或编码格式的图片。
 
   * **`eqiv`**，Equivalence Group，表示逻辑上等效的项，如不同语言的字幕。
 
@@ -198,7 +270,53 @@ Type: 'altr'
 EntityIds: [1, 2, 3]
 ```
 
+##### 2.3.3 iinf(ItemInfoBox)
 
+​	`ItemInfoBox`用于存储项目信息，`grid`和`iovl`属于`iinf`的两种项目类型，其实际二进制数据在`idat(ItemDataBox)`或外部`mdat`中。
+
+* 关键字box功能：
+
+| Box 类型         | 四字符码 | 功能说明         | 与 grid/iovl 的关系                      |
+| :--------------- | :------- | :--------------- | :--------------------------------------- |
+| ItemInfoBox      | `iinf`   | **项目信息定义** | 定义项目 ID 和类型（grid/iovl）          |
+| ItemLocationBox  | `iloc`   | **数据位置索引** | 记录 grid/iovl 数据在 idat/mdat 中的偏移 |
+| ItemDataBox      | `idat`   | **内联数据存储** | 直接包含 grid/iovl 的二进制数据          |
+| ItemReferenceBox | `iref`   | **项目间引用**   | 管理 grid/iovl 引用的子图像（**dimg**）  |
+
+​	值得注意的是，`dimg(Drived Image Reference)`不是一种图像类型，而是**引用关系类型**，其本质是在 `ItemReferenceBox (iref)` 中定义的特殊引用类型，作用是标记衍生图像(grid/iovl)所依赖的基础图像。
+
+* `dimg`引用示例：
+
+```c++
+MetaBox
+├── iinf (项目信息)
+│   ├── ID=1: Type="grid"  // 网格派生图像
+│   ├── ID=11: Type="hvc1" // 基础图(左上)
+│   ├── ID=12: Type="hvc1" // 基础图(中上)
+│   └── ...(其他9个基础图)
+└── iref (项目引用)
+    └── dimg引用组:
+        Source=1 → Targets=[11,12,13,21,22,23,31,32,33]
+```
+
+* `iinf`数据流示例：
+
+```shell
+meta Box
+├── iinf Box
+│   └── Entry #42: {item_ID=42, item_type="grid"} // 声明grid项目
+├── iloc Box
+│   └── Location: {item_ID=42, offset=0x120, length=24} // 数据位置
+└── idat Box
+    └── [0x120] 00 01 02 03... // 实际二进制数据(由parseImageGrid解析)
+```
+
+* 为什么这样设计：
+  * 解耦元数据与数据：`iinf`定义项目属性，`iloc`定位数据，`idat/mdat`存储数据。
+  * 高效检索：不需要解析整个数据流即可获取项目类型，可以通过`iinf`快速过滤出`grid/iovl`项目
+  * 灵活存储：小数据可直接内联在`idat`，大数据可外链到`mdat`。
+
+HEIF数据的解析流程为：先通过`iinf(ItemInfoBox)获取项目类型`，在通过`iloc(ItemLocationBox)`定位数据，最终从`idat(ItemDataBox)`或`mdat(MediaDataBox)`中加载二进制流进行解析。
 
 #### 2.4 moov box
 

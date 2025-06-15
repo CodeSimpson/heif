@@ -70,7 +70,17 @@ void writeImageOverlay(const ImageOverlay& iovl, BitStream& output)
         }
     }
 }
-
+/* 为什么iovl图可以这样解析？
+ * 因为HEIF标准明确定义了iovl数据的二进制格式：
+ * 1. version 版本号（1字节）
+ * 2. flags 标志位（1字节）
+ *    最低位bit0表示尺寸位宽：0=16位，1=32位
+ *    其他位保留，必须为0
+ * 3. canvasFillValue[rgba] 画布背景色（4x16位）
+ * 4. outputWidth 画布宽度（16/32位）
+ * 5. outputHeight 画布高度（16/32位）
+ * 6. offsets[N] 每个子图偏移量（Nx(32/64位））
+ */
 ImageOverlay parseImageOverlay(BitStream& input)
 {
     ImageOverlay iovl;

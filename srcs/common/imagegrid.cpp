@@ -44,6 +44,18 @@ void writeImageGrid(const ImageGrid& grid, BitStream& output)
     }
 }
 
+/* 为什么Grid图可以这样解析？
+ * 因为HEIF标准明确定义了grid数据的二进制格式：
+ * 1. 版本号（1字节）
+ * 2. 标志位（1字节）
+ *    最低位bit0表示尺寸位宽：0=16位，1=32位
+ *    其他位保留，必须为0
+ * 3. 网格参数（各1字节）
+ *    rowsMinusOne：实际行数 = value + 1
+ *    columsMinusOne：实际列数 = value + 1
+ * 4. 输出尺寸（2/4字节）
+ *    根据标志位选择16位或32位存储
+ */
 ImageGrid parseImageGrid(BitStream& input)
 {
     ImageGrid grid;
