@@ -511,7 +511,11 @@ namespace HEIF
         Properties processItemProperties() const;
 
         /**
-         * @brief Fill imageItemParameterSetMap, imageToParameterSetMap and imageItemCodeTypeMap from metabox */
+         * @brief Fill imageItemParameterSetMap, imageToParameterSetMap and imageItemCodeTypeMap from metabox
+         * @return imageItemParameterSetMap: 编码配置ID到参数集的映射
+         *         imageToParameterSetMap: 图像ID到解码配置ID的映射
+         *         imageItemCodeTypeMap: 图像ID到编码类型的映射
+         * */
         static void processDecoderConfigProperties(const ItemPropertiesBox& iprp,
                                                    const ItemFeaturesMap& itemFeaturesMap,
                                                    Map<DecoderConfigId, ParameterSetMap>& imageItemParameterSetMap,

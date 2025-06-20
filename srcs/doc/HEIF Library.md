@@ -36,8 +36,12 @@
       --->type == "iovl"				// 解析覆盖图参数
       	parseImageOverlay()
       	getReferencedFromItemListByType()
-      --->processItemProperties()		// 
-      --->extractItemInfoMap()		//
+      --->processItemProperties()		// 解析文件中独立项目和逻辑分组各自的属性信息
+      	--->iprp.getItemProperties(itemId)
+      	--->iprp.getItemProperties(groupId)
+      --->extractItemInfoMap()		// 遍历HEIF文件中的每个item，构建itemId -> ItemInfo映射表
+  --->HeifReaderImpl::processDecoderConfigProperties() // 提取并关联HEIF文件中图像项目的解码配置参数，核心目标是为每个图像项目（如HEVC/AVC/JPEG编码）绑定对应的解码器参数集（如HVCC/AVCC/JPEG配置）
+  --->HeifReaderImpl::getMasterImages()	// 查找master image数量
   ```
   
   meta相关数据结构
@@ -65,13 +69,13 @@
   	unsigned int displayableMasterImages
       ItemInfoMap == Map<ImageId, ItemInfo>
           ItemInfo {
-          	ForCCInt type
-              String name
-              String contentype
-              String contenEncoding
+          	ForCCInt type			// 项目类型编码，图像类：hvc1、avc1、grid、jpeg，元数据类：exif、xml、mime(通过MIME类型封装)
+              String name				// item可读名称，可选，图像item：MasterImage、Thumbnail_200x200，元数据item：Exif_Data_1
+              String contentype		// 描述内容的MIME类型，当type=mime时有效，图像：image/jpeg，元数据：application/rdf+xml
+              String contenEncoding	// 指示内容的压缩或编码方式，可选
               uint32_t width
               uint32_t height
-              uint64_t displayTime
+              uint64_t displayTime	// 图像的显示时间戳，用于序列图像的播放时序控制，为0时标识第一帧立即显示
       	}
       Map<ImageId, Grid>						// 保存itemId与其对应的网格图
           Grid {
@@ -99,14 +103,18 @@
       Properties == Map<uint32_t, PropertyTypeVector>
           PropertyTypeVector == Vector<ItemPropertyInfo>
           	ItemPropertyInfo {
-          		ItemPropertyType
-                  PropertyId == uint32_t
-                  bool essential
+          		ItemPropertyType			// 属性类型标识，对应HEIF规范中定义的4字符码ispe/irot/pixi等
+                  PropertyId == uint32_t		// 属性数据定位索引，HEIF中属性的原始数据集中存储在ItemPropertyContainer中，通过index可以检索
+                  bool essential				// 属性必要性标记，若为true，解析器必需解析此属性，否则可能导致渲染错误
       		}
   }
   ```
   
-  
+  > 为什么MetaBoxInfo::ItemInfoMap::ItemInfo中，type=mime时，contentType必须指定具体类型？
+  >
+  > ：这是由HEIF标准的设计机制和数据类型兼容性需求决定的。mime类型的定位为通用容器，用于HEIF中封装非原生支持格式活扩展格式，允许HEIF文件携带任意类型的数据（如PNG、JPEG、文本等），而不限于HEVC/AVC等原生支持的编码格式。
+
+
 
 ### 2. Box类型及作用
 
@@ -320,7 +328,33 @@ HEIF数据的解析流程为：先通过`iinf(ItemInfoBox)获取项目类型`，
 
 #### 2.4 moov box
 
-全称电影盒movie box，作用为存储媒体数据的时间线、轨道结构和全局元信息，主要用于扩展场景，如动态图形序列或混合媒体。在HEIF中，`moov`box为非必需，它的存在标志着文件包含**时间线媒体或动态内容** 。
+全称电影盒movie box，继承自ISO基础媒体文件格式（BMFF）的关键Box类型，`moov`作为元数据容器，存储全局媒体描述信息，包括图像项的元数据（如`ItemInfoBox`、`ItemLocationBox`）。解码配置参数如HVCC/AVCC/JPEG配置），时间轴信息如动画帧的时序、持续时间），轨道Track定义，主要用于扩展场景，如动态图形序列或混合媒体。在HEIF中，`moov`box为非必需，它的存在标志着文件包含**时间线媒体或动态内容** 。
+
+**静态HEIC文件的典型结构**
+
+```c++
+┌───────┐
+│ ftyp  │ → 文件类型声明（如"heic"）
+├───────┤
+│ meta  │ → 包含所有静态图像项元数据（ItemInfoBox/ItemLocationBox等）
+├───────┤
+│ mdat  │ → 存储实际编码数据（如HEVC主图、缩略图二进制）
+└───────┘
+```
+
+**动态HEIF文件结构**
+
+```c++
+┌───────┐
+│ ftyp  │
+├───────┤
+│ meta  │ → 静态图像项（如主图）
+├───────┤
+│ moov  │ → 视频轨道定义（动态部分）
+├───────┤
+│ mdat  │ → 存储静态图像和动态视频数据
+└───────┘
+```
 
 **动态图像序列（Animation）**
 
@@ -344,3 +378,6 @@ HEIF数据的解析流程为：先通过`iinf(ItemInfoBox)获取项目类型`，
 | **`trak` (Track Box)**         | 描述单个媒体轨道（如视频轨、音频轨），包含编解码参数、时间戳映射。 |
 | **`mvex` (Movie Extends Box)** | 用于分片媒体（类似MP4的Fragmented MP4）。                    |
 
+#### 2.5 moof box
+
+全称Movie Fragment Box，继承自ISO基础媒体文件格式（BMFF）的关键Box类型，作用于分片存储（将媒体数据分割为多个片段（Fragment），每个`moof`对应一个分片），动态流式传输。

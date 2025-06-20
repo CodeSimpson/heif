@@ -570,6 +570,7 @@ namespace HEIF
 
         mFileProperties.rootLevelMetaBoxProperties = extractMetaBoxProperties(metaBox);
         mMetaBoxInfo                               = extractItems(metaBox);
+        // 提取并关联HEIF文件中图像项目的解码配置参数
         processDecoderConfigProperties(metaBox.getItemPropertiesBox(),
                                        mFileProperties.rootLevelMetaBoxProperties.itemFeaturesMap,
                                        mImageItemParameterSetMap, mImageToParameterSetMap, mImageItemCodeTypeMap);
@@ -866,7 +867,7 @@ namespace HEIF
                         addSegmentSequence(0, mNextSequence);
                         error = handleMoov(io);
                     }
-                    else if (boxType == "moof")
+                    else if (boxType == "moof")                 // moof：movie fragment box
                     {
                         // 0 index of segmentPropertiesMap is reserved for initialization segment data
                         const SegmentId initializationSegmentId = 0;
@@ -904,7 +905,7 @@ namespace HEIF
 
         if (error == ErrorCode::OK)
         {
-            updateCompositionTimes(0);
+            updateCompositionTimes(0);      // 更新视频的样本合成时间
 
             // peek() sets eof bit for the stream. Clear stream to make sure it is still accessible. seekg() in C++11
             // should clear stream after eof, but this does not seem to be always happening.
@@ -1576,7 +1577,7 @@ namespace HEIF
         const ItemPropertiesBox& iprp = mMetaBox.getItemPropertiesBox();
 
         // Collect item properties
-        const auto& itemIds = mMetaBox.getItemInfoBox().getItemIds();
+        const auto& itemIds = mMetaBox.getItemInfoBox().getItemIds();   // ItemInfoBox存储了文件中所有独立项目的基础信息
         for (const auto itemId : itemIds)
         {
             const ItemPropertiesBox::PropertyInfos& propertyVector = iprp.getItemProperties(itemId);
@@ -1598,7 +1599,7 @@ namespace HEIF
 
         // Collect entity group properties
         std::vector<uint32_t> groupIds;
-        const auto& entityToGroupBoxes = mMetaBox.getGroupsListBox().getEntityToGroupsBoxes();
+        const auto& entityToGroupBoxes = mMetaBox.getGroupsListBox().getEntityToGroupsBoxes();  // GroupListBox存储了项目之间逻辑分组的先嗯关属性信息
         groupIds.reserve(entityToGroupBoxes.size());
 
         for (const EntityToGroupBox& box : entityToGroupBoxes)
@@ -1635,6 +1636,7 @@ namespace HEIF
     {
         for (const auto& imageProperties : itemFeaturesMap)
         {
+            // 查找imageId对应的解码配置属性索引
             const ImageId imageId = imageProperties.first;
             const std::uint32_t hvccIndex =
                 iprp.findPropertyIndex(ItemPropertiesBox::PropertyType::HVCC, imageId.get());
@@ -1665,6 +1667,7 @@ namespace HEIF
             {
                 continue;
             }
+            // 提取解码配置参数集
             record = static_cast<const DecoderConfigurationBox*>(iprp.getPropertyByIndex(configIndex.get() - 1));
             if (imageItemParameterSetMap.count(configIndex) == 0u)
             {
@@ -1708,7 +1711,7 @@ namespace HEIF
                     grid.rows         = imageGrid.rowsMinusOne + 1u;
                     grid.outputWidth  = imageGrid.outputWidth;
                     grid.outputHeight = imageGrid.outputHeight;
-                    getReferencedFromItemListByType(itemId, "dimg", grid.imageIds);
+                    getReferencedFromItemListByType(itemId, "dimg", grid.imageIds); // 获得dimg((Drived Image Reference)引用类型指向的基础图像的itemIds
                     metaBoxInfo.gridItems.insert({itemId, grid});
                 }
                 if (type == "iovl") //覆盖图
@@ -1729,14 +1732,14 @@ namespace HEIF
                                                           imageOverlay.offsets[i].verticalOffset};
                     }
 
-                    getReferencedFromItemListByType(itemId, "dimg", iovl.imageIds);
+                    getReferencedFromItemListByType(itemId, "dimg", iovl.imageIds); // // 获得dimg((Drived Image Reference)引用类型指向的基础图像的itemIds
                     metaBoxInfo.iovlItems.insert({itemId, iovl});
                 }
             }
         }
 
-        metaBoxInfo.properties  = processItemProperties();
-        metaBoxInfo.itemInfoMap = extractItemInfoMap(metaBox);
+        metaBoxInfo.properties  = processItemProperties();          // 解析文件中独立项目和逻辑分组各自的属性信息
+        metaBoxInfo.itemInfoMap = extractItemInfoMap(metaBox);      // 遍历HEIF文件中的每个image item，构建itemId -> ItemInfo映射表
 
         return metaBoxInfo;
     }
