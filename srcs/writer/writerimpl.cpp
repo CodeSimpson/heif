@@ -163,7 +163,7 @@ namespace HEIF
 
         if (outputConfig.progressiveFile)
         {
-            mInitialMdat = false;
+            mInitialMdat = false;           // 确定mdat box写在meta和moov box之后
         }
         else
         {
@@ -174,7 +174,7 @@ namespace HEIF
             mInitialMdat = true;
         }
 
-        mWriteItemCreationTimes = outputConfig.itemCreationTimes;
+        mWriteItemCreationTimes = outputConfig.itemCreationTimes;   // 是否记录图像项的创建时间
 
         mFile = nullptr;
         if (outputConfig.outputStream)
@@ -184,7 +184,7 @@ namespace HEIF
         }
         else if ((outputConfig.fileName) && (outputConfig.fileName[0] != 0))
         {
-            mFile             = ConstructFileStream(outputConfig.fileName);
+            mFile             = ConstructFileStream(outputConfig.fileName); // 构造文件输出流对象
             mOwnsOutputHandle = true;
         }
         if (mFile == nullptr)
@@ -197,7 +197,7 @@ namespace HEIF
             mFileTypeBox.addCompatibleBrand(brand.value);
         }
 
-        for (const auto& combination : outputConfig.compatibleCombinations)
+        for (const auto& combination : outputConfig.compatibleCombinations) // 存储兼容性品牌组合
         {
             TypeCombinationBox tyco;
             for (const auto& brand : combination)
@@ -213,23 +213,23 @@ namespace HEIF
             mFileTypeBox.addCompatibleBrand(outputConfig.majorBrand.value);
         }
 
-        if (mInitialMdat)
+        if (mInitialMdat)   // 非渐进式文件写入模式，ftyp在initialize()时写入，媒体数据mdat实时追加，元数据meta/moov在文件尾写入
         {
             BitStream output;
-            mFileTypeBox.writeBox(output);
+            mFileTypeBox.writeBox(output);  // 写入ftyp box
             if (!mExtendedTypeBox.getTypeCombinationBoxes().empty())
             {
                 mExtendedTypeBox.writeBox(output);
             }
-            writeBitstream(output, mFile);
+            writeBitstream(output, mFile);  // 将ftyp盒子数据写入文件
 
             // Write Media Data Box 'mdat' header. We can not know input data size, so use 64-bit large size field for
             // the box.
-            mMdatOffset = static_cast<uint64_t>(mFile->tellp());
-            output.clear();
+            mMdatOffset = static_cast<uint64_t>(mFile->tellp());    // 记录mdat盒子在mFile的起始位置，此时mFile中的ofstream处于刚写完ftyp box，准备写mdat的阶段，正好记录mdat的起始地址
+            output.clear();         // 清空比特流
             output.write32Bits(1);  // size field, value 1 implies using largesize field instead.
             output.write32Bits(FourCCInt("mdat").getUInt32());  // boxtype field
-            output.write64Bits(0);                              // largesize field
+            output.write64Bits(0);                              // largesize field，记录媒体数据大小，预留位置后续更新
             writeBitstream(output, mFile);
         }
 

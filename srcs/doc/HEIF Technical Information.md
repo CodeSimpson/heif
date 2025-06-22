@@ -40,32 +40,32 @@
 
   ​	HEIF文件的图像属性保存在 ItemPropertyContainerBox，其分为两类：descriptive和transformative，descriptive属性不会应用到图像的修改上，而transformative则会，除了通过descriptive image properties，HEIF也可以通过metadata items来表征image items，metadata items的格式有：Exif、XMP、MPEG-7 metadata。
 
-  | Name                                           | Type           | Description                                                  |
-  | ---------------------------------------------- | -------------- | ------------------------------------------------------------ |
-  | Decoder configuration and initialization       | Descriptive    | 初始化解码器所需的信息。该信息的结构通常在相关的图像编码格式规范中定义。 |
-  | Image spatial Extents (‘ispe’)                 | Descriptive    | 表示关联图像项的宽度和高度                                   |
-  | Pixel Aspect Ratio (‘pasp’)                    | Descriptive    | 具有与 ISO/IEC 14496-12 中定义的 PixelAspectRatioBox 相同的语法。 |
-  | Color Information (‘colr’)                     | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ColourInformationBox 具有相同的语法。 |
-  | Pixel Information (‘pixi’)                     | Descriptive    | 表示关联图像项的重建图像中颜色分量的数量和位深度。           |
-  | Relative Location (‘rloc’)                     | Descriptive    | 表示重建图像项相对于关联图像项的水平和垂直偏移。             |
-  | Image Properties for Auxiliary Images (‘auxC’) | Descriptive    | 辅助图像必须与 AuxiliaryTypeProperty 相关联。                |
-  | Content light level (‘clli’)                   | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ContentLightLevelBox 具有相同的语法。 |
-  | Mastering display colour volume (‘mdcv’)       | Descriptive    | 与 ISO/IEC 14496-12 中定义的 MasteringDisplayColourVolumeBox 具有相同的语法。 |
-  | Content colour volume (‘cclv’)                 | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ContentColourVolumeBox 具有相同的语法。 |
-  | Required reference types (‘rrtp’)              | Descriptive    | Lists the item reference types that a reader shall process to display the associated image item. |
-  | Creation time information (‘crtt’)             | Descriptive    | Creation time of the associated item or entity group.        |
-  | Modification time information (‘mdft‘)         | Descriptive    | Modification time of the associated item or entity group.    |
-  | User description (‘udes‘)                      | Descriptive    | 用户定义的名称、描述和标签。                                 |
-  | Accessibility text (‘altt‘)                    | Descriptive    | Alternate text for an image, in case the image cannot be displayed. |
-  | Auto exposure information (‘aebr‘)             | Descriptive    | 在包围曝光照片组中，关于各张照片曝光差异的信息               |
-  | White balance information (‘wbbr‘)             | Descriptive    | 在包围曝光照片组中，关于白平衡补偿信息                       |
-  | Focus information (‘fobr‘)                     | Descriptive    | 在包围曝光照片组中，焦点变化信息                             |
-  | Flash exposure information (‘afbr‘)            | Descriptive    | 在包围曝光照片组中，闪光灯曝光变化信息                       |
-  | Depth of field information (‘dobr‘)            | Descriptive    | 在包围曝光照片组中，景深变化信息                             |
-  | Panorama information (‘pano‘)                  | Descriptive    | Characteristics about the associated panorama entity group.  |
-  | Image Scaling (‘iscl’)                         | Transformative | 将输入图像的大小调整为目标宽度和高度。                       |
-  | Image Rotation (‘irot’)                        | Transformative | 旋转 90 度、180 度或 270 度。                                |
-  | Clean Aperture (‘clap’)                        | Transformative | 根据给定的裁剪矩形进行裁剪。                                 |
+| Name                                            | Type           | Description                                                  |
+| ----------------------------------------------- | -------------- | ------------------------------------------------------------ |
+| Decoder configuration and initialization (dccg) | Descriptive    | 初始化解码器所需的信息。该信息的结构通常在相关的图像编码格式规范中定义。 |
+| Image spatial Extents (‘ispe’)                  | Descriptive    | 表示关联图像项的宽度和高度                                   |
+| Pixel Aspect Ratio (‘pasp’)                     | Descriptive    | 具有与 ISO/IEC 14496-12 中定义的 PixelAspectRatioBox 相同的语法。 |
+| Color Information (‘colr’)                      | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ColourInformationBox 具有相同的语法。 |
+| Pixel Information (‘pixi’)                      | Descriptive    | 表示关联图像项的重建图像中颜色分量的数量和位深度。           |
+| Relative Location (‘rloc’)                      | Descriptive    | 表示重建图像项相对于关联图像项的水平和垂直偏移。             |
+| Image Properties for Auxiliary Images (‘auxC’)  | Descriptive    | 辅助图像必须与 AuxiliaryTypeProperty 相关联。                |
+| Content light level (‘clli’)                    | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ContentLightLevelBox 具有相同的语法。 |
+| Mastering display colour volume (‘mdcv’)        | Descriptive    | 与 ISO/IEC 14496-12 中定义的 MasteringDisplayColourVolumeBox 具有相同的语法。 |
+| Content colour volume (‘cclv’)                  | Descriptive    | 与 ISO/IEC 14496-12 中定义的 ContentColourVolumeBox 具有相同的语法。 |
+| Required reference types (‘rrtp’)               | Descriptive    | Lists the item reference types that a reader shall process to display the associated image item. |
+| Creation time information (‘crtt’)              | Descriptive    | Creation time of the associated item or entity group.        |
+| Modification time information (‘mdft‘)          | Descriptive    | Modification time of the associated item or entity group.    |
+| User description (‘udes‘)                       | Descriptive    | 用户定义的名称、描述和标签。                                 |
+| Accessibility text (‘altt‘)                     | Descriptive    | Alternate text for an image, in case the image cannot be displayed. |
+| Auto exposure information (‘aebr‘)              | Descriptive    | 在包围曝光照片组中，关于各张照片曝光差异的信息               |
+| White balance information (‘wbbr‘)              | Descriptive    | 在包围曝光照片组中，关于白平衡补偿信息                       |
+| Focus information (‘fobr‘)                      | Descriptive    | 在包围曝光照片组中，焦点变化信息                             |
+| Flash exposure information (‘afbr‘)             | Descriptive    | 在包围曝光照片组中，闪光灯曝光变化信息                       |
+| Depth of field information (‘dobr‘)             | Descriptive    | 在包围曝光照片组中，景深变化信息                             |
+| Panorama information (‘pano‘)                   | Descriptive    | Characteristics about the associated panorama entity group.  |
+| Image Scaling (‘iscl’)                          | Transformative | 将输入图像的大小调整为目标宽度和高度。                       |
+| Image Rotation (‘irot’)                         | Transformative | 旋转 90 度、180 度或 270 度。                                |
+| Clean Aperture (‘clap’)                         | Transformative | 根据给定的裁剪矩形进行裁剪。                                 |
 
 ### 4. 衍生图Derived Images
 
