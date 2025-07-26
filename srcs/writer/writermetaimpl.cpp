@@ -15,6 +15,7 @@
 #include <cassert>
 #include <cstring>
 #include <memory>
+#include <iostream>
 
 #include "accessibilitytext.hpp"
 #include "auxiliarytypeproperty.hpp"
@@ -210,9 +211,10 @@ namespace HEIF
             const auto imageSize         = mDecoderConfigIndexToSize[configPropertyIndex];
             const auto width             = imageSize.width;
             const auto height            = imageSize.height;
+            std::cout << "ispe width:" << width << " height:" << height << std::endl;
             const auto ispePropertyIndex = getIspeIndex(width, height);
             mMetaBox.addProperty(configPropertyIndex, {aImageId.get()}, true);
-            mMetaBox.addProperty(ispePropertyIndex, {aImageId.get()}, false);
+            mMetaBox.addProperty(ispePropertyIndex, {aImageId.get()}, true);
         }
         else if (mediaData.mediaFormat == MediaFormat::JPEG)
         {
@@ -910,7 +912,7 @@ namespace HEIF
             mMetaBox.addItemReference("dimg", gridId.get(), toImageId.get());
         }
         const auto ispeIndex = getIspeIndex(gridItem.outputWidth, gridItem.outputHeight);
-        mMetaBox.addProperty(static_cast<uint16_t>(ispeIndex), {gridId.get()}, false);
+        mMetaBox.addProperty(static_cast<uint16_t>(ispeIndex), {gridId.get()}, true);
 
         if (mWriteItemCreationTimes)
         {
@@ -1202,6 +1204,7 @@ namespace HEIF
                     configBox->setConfiguration(configRecord);
                     const auto index = mMetaBox.addProperty(static_pointer_cast<Box>(configBox), {}, true);
                     mDecoderConfigs[decoderConfigId] = index;
+                    std::cout << "configRecord width:" << configRecord.getPicWidth() << " height:" << configRecord.getPicHeight() << std::endl;
                     mDecoderConfigIndexToSize[index] = {configRecord.getPicWidth(), configRecord.getPicHeight()};
                 }
                 else if (configNalUnits.begin()->decSpecInfoType == DecoderSpecInfoType::JPEG)

@@ -22,6 +22,8 @@
 #include <fstream>
 #include <iostream>
 #include <map>
+#include <vector>
+#include <queue>
 
 #include "heifreader.h"
 #include "heifwriter.h"
@@ -37,6 +39,7 @@ void example5();
 void example6();
 void example7();
 void example8();
+void example9();
 void printInfo(const char* file);
 
 /// Access and read a cover image
@@ -565,6 +568,316 @@ void example8()
     Reader::Destroy(reader);
 }
 
+// Array<DecoderSpecificInfo> getCsdData(const uint8_t* buffer, uint32_t bufferSize, uint32_t& csdSize) {
+//     Array<DecoderSpecificInfo> csdData(3);
+//     bool vpsFound = false, spsFound = false, ppsFound = false;
+
+//     for (uint32_t i = 0; i < bufferSize; ) {
+//         // 检测3/4字节起始码
+//         bool isStartCode = false;
+//         uint32_t startCodeLen = 0;
+        
+//         if (i + 2 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && buffer[i+2] == 0x01) {
+//             startCodeLen = 3;
+//             isStartCode = true;
+//         } else if (i + 3 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && 
+//                    buffer[i+2] == 0x00 && buffer[i+3] == 0x01) {
+//             startCodeLen = 4;
+//             isStartCode = true;
+//         }
+
+//         if (!isStartCode) {
+//             i++;
+//             continue;
+//         }
+
+//         uint32_t nalStart = i;
+//         i += startCodeLen; // 跳过起始码
+//         if (i >= bufferSize) break;
+
+//         uint8_t nalType = (buffer[i] >> 1) & 0x3F;
+//         i++; // 移动到NAL数据区
+
+//         // 查找下一个起始码
+//         uint32_t nalEnd = bufferSize;
+//         for (uint32_t j = i; j < bufferSize; ++j) {
+//             if (j + 2 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && buffer[j+2] == 0x01) {
+//                 nalEnd = j - startCodeLen + 1;
+//                 break;
+//             } else if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && 
+//                       buffer[j+2] == 0x00 && buffer[j+3] == 0x01) {
+//                 nalEnd = j;
+//                 break;
+//             }
+//         }
+
+//         // 提取NAL数据（包含起始码）
+//         uint32_t nalSize = nalEnd - nalStart;
+//         switch (nalType) {
+//             case 32: // VPS
+//                 if (!vpsFound) {
+//                     csdData[0].decSpecInfoType = DecoderSpecInfoType::HEVC_VPS;
+//                     csdData[0].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
+//                     vpsFound = true;
+//                 }
+//                 break;
+//             case 33: // SPS
+//                 if (!spsFound) {
+//                     csdData[1].decSpecInfoType = DecoderSpecInfoType::HEVC_SPS;
+//                     csdData[1].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
+//                     spsFound = true;
+//                 }
+//                 break;
+//             case 34: // PPS
+//                 if (!ppsFound) {
+//                     csdData[2].decSpecInfoType = DecoderSpecInfoType::HEVC_PPS;
+//                     csdData[2].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
+//                     ppsFound = true;
+//                 }
+//                 break;
+//         }
+
+//         i = nalEnd; // 跳转到下一个单元
+//         if (vpsFound && spsFound && ppsFound) break;
+//     }
+
+//     csdSize = csdData[0].decSpecInfoData.size + 
+//              csdData[1].decSpecInfoData.size + 
+//              csdData[2].decSpecInfoData.size;
+//     cout << "vpsSize:" << csdData[0].decSpecInfoData.size << " spsSize:" << csdData[1].decSpecInfoData.size << " ppsSize:" << csdData[2].decSpecInfoData.size << endl;
+//     return csdData;
+// }
+
+Array<DecoderSpecificInfo> getCsdData(const uint8_t* buffer, uint32_t bufferSize, uint32_t& csdSize) {
+    uint32_t spsSize = 0;
+    uint32_t ppsSize = 0;
+    uint32_t vpsSize = 0;
+
+    Array<DecoderSpecificInfo> csdData(3);
+    for (uint32_t i = 0; i < bufferSize; ++i) {
+        // 查找起始码 0x000001
+        if (i + 3 < bufferSize && buffer[i] == 0x00 && buffer[i + 1] == 0x00 && buffer[i + 2] == 0x00 && buffer[i + 3] == 0x01) {
+            uint8_t nalType = (buffer[i + 4] >> 1) & 0x3F;
+            if (nalType == 32) { // VPS
+                // vpsSize = i;
+                for (uint32_t j = i + 4; j < bufferSize; ++j) {
+                    if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j + 1] == 0x00 && buffer[j + 2] == 0x00 && buffer[j + 3] == 0x01) {
+                        vpsSize = j - i;
+                        csdData[0].decSpecInfoType = DecoderSpecInfoType::HEVC_VPS;
+                        csdData[0].decSpecInfoData = Array<uint8_t>(buffer + i, buffer + j);
+                        break;
+                    }
+                }
+            } else if (nalType == 33) { // SPS
+                // spsSize = i;
+                for (uint32_t j = i + 4; j < bufferSize; ++j) {
+                    if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j + 1] == 0x00 && buffer[j + 2] == 0x00 && buffer[j + 3] == 0x01) {
+                        spsSize = j - i;
+                        csdData[1].decSpecInfoType = DecoderSpecInfoType::HEVC_SPS;
+                        csdData[1].decSpecInfoData = Array<uint8_t>(buffer + i, buffer + j);
+                        break;
+                    }
+                }
+            } else if (nalType == 34) { // PPS
+                // ppsSize = i;
+                for (uint32_t j = i + 4; j < bufferSize; ++j) {
+                    if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j + 1] == 0x00 && buffer[j + 2] == 0x00 && buffer[j + 3] == 0x01) {
+                        ppsSize = j - i;
+                        csdData[2].decSpecInfoType = DecoderSpecInfoType::HEVC_PPS;
+                        csdData[2].decSpecInfoData = Array<uint8_t>(buffer + i, buffer + j);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    cout << "vpsSize:" << csdData[0].decSpecInfoData.size << " spsSize:" << csdData[1].decSpecInfoData.size << " ppsSize:" << csdData[2].decSpecInfoData.size << endl;
+    csdSize = vpsSize + spsSize + ppsSize;
+    return csdData;
+}
+
+void example9()
+{
+    std::queue<std::vector<uint8_t>> primaryHeicBuffer;
+    std::string basePath = "./heicenc/primaryBitstream_";
+    uint32_t count = 0;
+    while (true) {
+        // 生成文件名
+        std::string filePath = basePath + std::to_string(count) + ".h265";
+        // 以二进制模式打开文件
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            break; // 文件不存在时退出循环
+        }
+        // 获取文件大小并调整vector容量
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> buffer(size);
+        // 读取数据到vector
+        if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+            primaryHeicBuffer.push(std::move(buffer));
+        } else {
+            std::cout << "error: only" << file.gcount() << " could be read" << std::endl;
+            break;
+        }
+        count++;
+    }
+
+    std::queue<std::vector<uint8_t>> gainmapHeicBuffer;
+    basePath = "./heicenc/gainmapBitstream_";
+    count = 0;
+    while(true) {
+        // 生成文件名
+        std::string filePath = basePath + std::to_string(count) + ".h265";
+        // 以二进制模式打开文件
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            break; // 文件不存在时退出循环
+        }
+        // 获取文件大小并调整vector容量
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> buffer(size);
+        // 读取数据到vector
+        if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+            gainmapHeicBuffer.push(std::move(buffer));
+        } else {
+            std::cout << "error: only" << file.gcount() << " could be read" << std::endl;
+            break;
+        }
+        count++;
+    }
+
+    std::vector<uint8_t> isoMetadataBitstream;
+    std::string filePath = "./heicenc/isoMetadataBitstream.bin";
+    // 以二进制模式打开文件
+    std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+    if (file.is_open()) {
+        // 获取文件大小并调整vector容量
+        std::streamsize size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        isoMetadataBitstream.resize(size);
+        if (file.read(reinterpret_cast<char*>(isoMetadataBitstream.data()), size)) {
+            std::cout << "all characters from isoMetadataBitstream read successfully." << std::endl;
+        } else {
+            std::cout << "error: only" << file.gcount() << " could be read" << std::endl;
+        }
+    }
+
+    std::cout << "primaryHeicBuffer size:" << primaryHeicBuffer.size() << " gainmapHeicBuffer size:"<< gainmapHeicBuffer.size()
+              << " isoMetadataBitstream size:" << isoMetadataBitstream.size() << std::endl;
+
+    // 初始化参数
+    const uint32_t tileWidth = 512;
+    const uint32_t tileHeight = 512;
+    const uint32_t fullWidth = 3072;
+    const uint32_t fullHeight = 4096;
+
+    // 创建Writer实例
+    Writer* writer = Writer::Create();
+    OutputConfig writerOutputConf{};
+    writerOutputConf.fileName = "IMG_20250725_173515_Nokia.HEIC";
+    writerOutputConf.progressiveFile = false;
+    writerOutputConf.majorBrand = "heic";
+    writerOutputConf.compatibleBrands = Array<FourCC>(2);
+    writerOutputConf.compatibleBrands[0] = FourCC("mif1");
+    writerOutputConf.compatibleBrands[1] = FourCC("heic");
+    // writerOutputConf.compatibleBrands[2] = FourCC("tmap");
+
+    // 初始化Writer
+    if(writer->initialize(writerOutputConf) != ErrorCode::OK) {
+        cout << "initialize failed!" << endl;
+        Writer::Destroy(writer);
+        return;
+    }
+
+    // 准备HEVC解码配置
+    uint32_t csdDataSize = 0;
+    Array<DecoderSpecificInfo> decoderConfig = getCsdData(primaryHeicBuffer.front().data(), primaryHeicBuffer.front().size(), csdDataSize);
+    cout << "read csd data size:" << csdDataSize << " decoderConfig size:" << decoderConfig.size << endl;
+    DecoderConfigId decoderConfigId;
+
+    if(writer->feedDecoderConfig(decoderConfig, decoderConfigId) != ErrorCode::OK) {
+        cout << "feedDecoderConfig failed!" << endl;
+        return;
+    }
+
+    // 存储所有分块ImageID
+    std::vector<ImageId> tileIds;
+    const uint32_t cols = fullWidth / tileWidth;  // 6列
+    const uint32_t rows = fullHeight / tileHeight; // 8行
+
+    // 处理所有分块
+    while(!primaryHeicBuffer.empty())
+    {
+        auto& tileData = primaryHeicBuffer.front();
+        cout << "primage iamge gridSize:" << tileData.size() << endl;
+        // 封装分块数据
+        Data mediaData;
+        mediaData.mediaFormat = MediaFormat::HEVC;
+        mediaData.data = tileData.data();
+        mediaData.size = static_cast<uint32_t>(tileData.size());
+        mediaData.decoderConfigId = decoderConfigId;
+
+        MediaDataId mediaDataId;
+        ErrorCode ret = writer->feedMediaData(mediaData, mediaDataId);
+        if(ret != ErrorCode::OK) {
+            cout << "feedMediaData failed! ret:" << static_cast<int>(ret) << endl;
+            return;
+        }
+
+        // 添加为图像项
+        ImageId tileId;
+        if(writer->addImage(mediaDataId, tileId) != ErrorCode::OK) {
+            cout << "addImage failed!" << endl;
+            return;
+        }
+        if (writer->setImageHidden(tileId, true) != ErrorCode::OK) {
+            cout << "setImageHidden failed!" << endl;
+            return;
+        }
+
+        cout << "mediaDataId:" <<  mediaDataId.get() << " tileId:" << tileId.get() << endl;
+        tileIds.push_back(tileId);
+        primaryHeicBuffer.pop();
+    }
+
+    // 创建网格组合
+    Grid grid;
+    grid.columns = cols;          // 6列
+    grid.rows = rows;             // 8行
+    grid.outputWidth = fullWidth; // 总宽度3072
+    grid.outputHeight = fullHeight;// 总高度4096
+    cout << "gridrows:" << grid.rows << " gridCols:" << grid.columns << endl;
+    grid.imageIds = Array<ImageId>(tileIds.size());
+    for (uint32_t i = 0; i < tileIds.size(); ++i)
+    {
+        grid.imageIds[i] = tileIds[i];
+    }
+
+    // 添加网格派生图像
+    ImageId gridId;
+    if(writer->addDerivedImageItem(grid, gridId) != ErrorCode::OK) {
+        cout << "addDerivedImageItem failed!" << endl;
+        return;
+    }
+
+    // 设置主图像
+    if(writer->setPrimaryItem(gridId) != ErrorCode::OK) {
+        cout << "setPrimaryItem failed!" << endl;
+        return;
+    }
+
+    // 最终封装
+    if(writer->finalize() != ErrorCode::OK) {
+        cout << "finalize failed!" << endl;
+        return;
+    }
+
+    // 清理资源
+    Writer::Destroy(writer);
+}
+
 void printInfo(const char* filename)
 {
     cout << "Can't find input file: " << filename << ". "
@@ -574,12 +887,13 @@ void printInfo(const char* filename)
 
 int main()
 {
-    example1();
-    example2();
-    example3();
-    example4();
-    example5();
-    example6();
-    example7();
-    example8();
+    // example1();
+    // example2();
+    // example3();
+    // example4();
+    // example5();
+    // example6();
+    // example7();
+    // example8();
+    example9();
 }

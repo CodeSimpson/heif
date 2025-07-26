@@ -123,7 +123,8 @@ HEIF文件结构层级：
 ```c++
 File
 ├── ftyp (File Type Box)
-├── meta (MetaBox, 元数据容器) ← 我们讨论的上下文
+├── meta (MetaBox, 元数据容器) ← 我们讨论的上下文    
+│   ├── hdlr (HandlerBox)		 // 标识媒体类型
 │   ├── iinf (ItemInfoBox)       // 存储项目信息
 │   ├── iloc (ItemLocationBox)   // 存储项目数据位置
 │   ├── iprp (ItemPropertiesBox) // 项目属性
@@ -210,6 +211,8 @@ mp4dump *.heic | grep -A 3 "ftyp"
 * 资源定位
   - 通过`iloc` Box记录每个图像项在文件中的物理位置和大小，实现快速数据访问。
 
+
+
 ##### 2.3.1 关键子box
 
 `meta`box通过嵌套子box实现具体功能：
@@ -241,9 +244,400 @@ meta
     └── hvcC (HEVC配置参数)       // 主图的解码配置
 ```
 
-##### 2.3.2  grpl(GroupsListBox)
 
-根据HEIF（ISO/IEC 23008-12）标准，`GroupsListBox`（FourCC为`grpl`）是`MetaBox`的子Box之一，用于定义文件中的分组逻辑。
+
+##### 2.3.2 hdlr(HandlerBox)
+
+作用：
+
+* 指明媒体类型
+  * 指明当前track（数据流）的用途类型，例如：主图像（`pict`，表示图片数据）、元数据（如Exif、XMP等）、缩略图（可能用`thmb`或其他自定义标识）
+* 关联处理程序
+  * 定义处理该数据的“处理器”（Handler），例如：视频编码器（如HEVC/H.265）、图像编码器（如AVIF或JPEG）、元数据解析器（如Exif工具）。
+
+hdlr box的二进制结构如下（字段按顺序排列）：
+
+| 字段名           | 大小（字节） | 描述                                                      |
+| ---------------- | ------------ | --------------------------------------------------------- |
+| **Version**      | 1            | 盒子版本（通常为0）                                       |
+| **Flags**        | 3            | 标志位（通常全0）                                         |
+| **Pre-defined**  | 4            | 保留字段（通常为0）                                       |
+| **Handler Type** | 4            | 标识处理类型（如`pict`表示图片）                          |
+| **Vendor**       | 4            | 厂商标识（如`appl`表示苹果，`mif1`表示HEIF标准）          |
+| **Name**         | 可变长度     | 处理程序名称（如`HEVC Coding`或自定义字符串，以null结尾） |
+
+在HEIF（HEIC）文件中，当同时存在**主图像（Primary Image）** 和**增益图（Gainmap Image）** 时，它们的`hdlr box`处理方式如下：
+
+* **独立Track场景**
+
+  如果主图像和增益图分别存储为**两个独立的Track** ，则每个Track都会包含自己的`hdlr box`，具体表现为：
+
+  * **主图像的hdlr box**
+    - `Handler Type`通常为`'pict'`，表示图像数据。
+    - `Name`可能为`HEVC Coding`（假设使用HEVC编码）。
+  * **增益图的hdlr box**
+    * 若遵循标准扩展，可能定义新的`Handler Type`（如`'gain'`）。
+    * 若厂商自定义（如苹果），可能沿用`'pict'`但通过`Name`字段区分（如`Apple Gainmap`）。
+
+* **属性附加场景**
+
+  如果增益图作为主图像的**属性（Item Property）** 存在（例如通过`ipco`或`auxC` box关联），则无需单独Track。此时**仅主图像的hdlr box存在** ，增益图通过其他元数据描述。
+
+
+
+##### 2.3.3 iloc(ItemLocationBox)
+
+用于**描述文件中各个数据项（Item）的存储位置和访问方式** 。
+
+作用：
+
+* **定位数据项**
+
+  记录每个Item（如图像、缩略图、元数据等）在文件中的**物理存储位置** （字节偏移量）和**长度** ，便于直接访问。
+
+* **支持分块存储**
+
+  允许单个Item的数据分散在多个**extent（数据段）** 中，例如分片存储的HEVC图像或分块的元数据。
+
+iloc box的二进制结构如下（字段按顺序排列）：
+
+| 字段名               | 大小（字节） | 描述                                                         |
+| -------------------- | ------------ | ------------------------------------------------------------ |
+| **Version**          | 1            | 版本号（0或1，版本1支持64位偏移量）                          |
+| **Offset Size**      | 4 bits       | 偏移量字段的字节长度（4/8表示4或8字节，版本1支持8字节）      |
+| **Length Size**      | 4 bits       | 长度字段的字节长度（同上）                                   |
+| **Base Offset Size** | 4 bits       | 基础偏移量字段的字节长度（仅版本1存在）                      |
+| **Reserved**         | 4 bits       | 保留字段（通常为0）                                          |
+| **Item Count**       | 2或4         | 数据项的总数（版本0为2字节，版本1为4字节）                   |
+| **Item Entries**     | 可变长度     | 每个Item的条目，包含ID、数据引用索引、基础偏移量和extent列表（见下表） |
+
+每个Item Entry包含以下字段：
+
+| 字段名                   | 大小（字节）         | 描述                                                         |
+| ------------------------ | -------------------- | ------------------------------------------------------------ |
+| **Item ID**              | 2或4                 | Item的唯一标识符（版本0为2字节，版本1为4字节）               |
+| **Data Reference Index** | 2                    | 数据引用索引（通常为0，表示数据在当前文件）                  |
+| **Base Offset**          | 根据Base Offset Size | 基础偏移量（用于计算实际偏移，若为0则直接使用extent的偏移）  |
+| **Extent Count**         | 2                    | 该Item的数据段（extent）数量                                 |
+| **Extent Entries**       | 可变长度             | 每个extent的偏移量和长度（根据Offset Size和Length Size定义字节数） |
+
+
+
+##### 2.3.4 iinf(ItemInfoBox)
+
+​	`ItemInfoBox`用于**描述文件中所有数据项（Item）的元数据信息**。
+
+作用：
+
+* **全局Item目录**
+
+  记录文件中所有**数据项（Item）** 的基本信息，包括图像、缩略图、增益图、元数据等，每个Item对应一个`item_info_entry`。
+
+* **定义Item类型与属性**
+
+  每个`item_info_entry`包含Item的**类型编码（如`hvc1`、`grid`等）** 、**内容类型（MIME类型）** 、**保护方案（如加密）** 等关键元数据。
+
+* **关联其他元数据**
+
+  通过`item_ID`与`iloc`（定位数据位置）、`ipma`（属性关联）等Box联动，构建完整的文件解析逻辑。
+
+`iinf` box的结构：
+
+```
+iinf Box (Item Information Box)
+├── version (1字节, 版本号)
+├── entry_count (2或4字节, Item条目数)
+└── item_info_entry列表 (每个条目包含以下字段)
+    ├── item_ID (2或4字节, Item唯一标识)
+    ├── item_protection_index (2字节, 保护方案索引)
+    ├── item_type (4字节, 类型编码，如'hvc1'、'avc1'、'Exif'等)
+    ├── item_name (可变长度, 可选的Item名称)
+    └── content_type / content_encoding (可选, 如MIME类型)
+```
+
+关键字段详解
+
+1. **item_type**
+   - 标识Item的数据格式，常见类型包括：
+     - `hvc1`：HEVC编码的主图像。
+     - `grid`：分块图像（如全景图）。
+     - `Exif`：Exif元数据。
+     - `mime`：自定义MIME类型（需结合`content_type`字段）。
+     - `gain`：增益图（厂商可能扩展自定义类型）。
+2. **item_protection_index**
+   - 若Item被加密或受DRM保护，此字段指向`sinf`（Protection Scheme Info Box）中的方案索引。
+3. **content_type**
+   - 当`item_type='mime'`时，此字段定义具体的MIME类型（如`image/jpeg`、`image/png`）。
+
+
+
+##### 2.3.5 pitm(PrimaryItemBox)
+
+用于**指定文件中的主数据项（Primary Item）** ，即默认显示的图像或核心内容。
+
+作用：
+
+* **定义主Item**
+
+  明确文件中哪一个Item（如图像、视频序列）是**默认加载和显示的主体内容** ，通常对应最高分辨率或完整视图的图像。
+
+* **简化解析流程**
+
+  解析器无需遍历所有Item，直接通过`pitm`快速定位主资源，提升文件打开效率。
+
+* **兼容多内容场景**
+
+  当文件包含多个图像（如连拍、实况照片、多分辨率版本）时，`pitm`确保软件能正确选择默认展示项。
+
+结构：
+
+| 字段名      | 大小（字节） | 描述                                             |
+| ----------- | ------------ | ------------------------------------------------ |
+| **Version** | 1            | 版本号（0或1，版本1支持4字节Item ID）            |
+| **Item ID** | 2或4         | 主Item的唯一标识符（版本0为2字节，版本1为4字节） |
+
+与其它Box的关联：
+
+* `iinf` Box
+
+  通过`pitm`中的Item ID，在`iinf`中查找对应的Item类型（如`hvc1`表示HEVC编码的主图像）。
+
+* `iloc` Box
+
+  结合`iloc`定位主Item的存储位置（偏移量、长度），实现数据加载。
+
+* `ipma/ipco` Box
+
+  主Item的属性（如旋转角度、色彩空间）通过`ipma`关联到`ipco`中的属性配置。
+
+
+
+##### 2.3.6 iprp(ItemPropertiesBox)
+
+管理所有Item属性（如旋转、色彩空间、增益图参数等）的核心容器*
+
+作用：
+
+* **集中管理属性定义与关联**
+
+  `iprp` 包含两个关键子Box：
+
+  * **`ipco`（ItemPropertyContainerBox）** ：存储所有**属性定义** （如旋转角度、色彩配置）。
+  * **`ipma`（ItemPropertyAssociationBox）** ：将属性关联到具体的**Item** （通过`item_ID`）。
+
+* **避免冗余存储**
+
+  * 属性（如统一应用的色彩配置）只需在`ipco`中定义一次，多个Item可通过`ipma`引用同一属性，减少文件体积。
+
+* **支持复杂元数据扩展**
+
+  * 允许动态添加自定义属性（如厂商特定的增益图参数、深度信息等）。
+
+结构：
+
+```c++
+iprp Box (Item Properties Box)
+├── ipco Box (Item Property Container)
+│   ├── Property 1 (如旋转属性 'rrot')
+│   ├── Property 2 (如色彩配置 'colr')
+│   └── ... 其他属性定义
+└── ipma Box (Item Property Association)
+    ├── Entry 1: item_ID=1 → [Property Index 1, Property Index 2...]
+    └── Entry 2: item_ID=2 → [Property Index 3...]
+```
+
+子box详解：
+
+* `ipco` Box（属性定义库）
+
+  存储所有属性类型，每个属性通过为一索引标识。
+
+  | 属性类型                       | 作用示例                        |
+  | ------------------------------ | ------------------------------- |
+  | `rrot` (Rotation)              | 定义图像旋转角度（90°, 180°等） |
+  | `colr` (Color)                 | 指定色彩空间（sRGB、Rec.2020）  |
+  | `imir` (Mirror)                | 镜像翻转（水平/垂直）           |
+  | `clap` (Clean Aperture)        | 裁剪区域定义                    |
+  | `ispe` (Image Spatial Extents) | 图像分辨率（宽高）              |
+  | 自定义属性                     | 厂商扩展（如Apple的增益图参数） |
+
+* `ipma` Box（属性关联库）
+
+​	**映射Item与属性** ：每个条目通过`item_ID`关联一个Item，并列出其所有属性索引（指向`ipco`中的属性）。
+
+与其它Box的关联：
+
+1. **从`iinf`获取Item类型**
+   通过`iinf`确定Item的用途（如主图像、缩略图）。
+2. **通过`ipma`查找属性索引**
+   根据Item的`item_ID`，在`ipma`中找到关联的属性索引列表。
+3. **从`ipco`提取属性值**
+   按索引从`ipco`中读取具体属性值（如旋转角度=90°）。
+4. **应用属性到数据**
+   结合`iloc`定位的像素数据，按属性处理图像（如旋转后显示）。
+
+
+
+##### 2.3.7 idat(ItemDataBox)
+
+用于**内联存储一个或多个Item的原始数据** 的容器。
+
+作用：
+
+* **集中存储小尺寸数据**
+
+  将多个Item的数据（如图像像素、Exif元数据、缩略图）直接嵌入到`idat` Box中，无需外部文件或分散存储。
+
+* **优化访问效率**
+
+  避免频繁的文件寻址，对小型数据（如短文本元数据、图标）的读取更高效。
+
+* **简化文件结构**
+
+  减少`iloc` Box的外部数据引用依赖，适用于数据量小且无需独立存储的场景。
+
+结构：
+
+| 字段/结构      | 描述                                                         |
+| -------------- | ------------------------------------------------------------ |
+| **Box Header** | 标准Box头（类型`idat`，包含长度和版本信息）                  |
+| **数据块序列** | 连续存储的二进制数据流，可能包含多个Item的数据（无显式分隔符） |
+| **引用方式**   | 通过`iloc` Box的`offset`字段指向`idat`内的起始位置，结合`length`提取 |
+
+与`iloc`Box的协作：
+
+1. **数据定位流程**
+
+   - `iloc` Box中某个Item的`offset`字段指向`idat`内的偏移量。
+   - `length`字段指定从该偏移量读取的数据长度。
+
+2. **示例**
+   假设`idat`存储了三个Item的数据：
+
+   复制代码
+
+   ```
+   idat Box:
+     [Item1数据][Item2数据][Item3数据]
+   ```
+
+   - `iloc`中Item1的`offset=0`, `length=100`
+   - Item2的`offset=100`, `length=150`
+   - Item3的`offset=250`, `length=80`
+
+适用场景：
+
+| **场景**           | **使用`idat`的优势**                           |
+| ------------------ | ---------------------------------------------- |
+| **小型元数据存储** | Exif/XMP数据（几百字节）直接内联，减少文件碎片 |
+| **低分辨率缩略图** | 快速访问预览图，无需解码主图像                 |
+| **文本注释**       | 短文本（如拍摄者信息）内联存储，提升读取速度   |
+| **图标/标识**      | 小尺寸Logo或水印直接嵌入，简化文件结构         |
+
+
+
+##### 2.3.8 iref(ItemReferenceBox)
+
+用于**定义不同Item之间的引用关系**，实现数据关联与结构化组合。
+
+作用：
+
+* **建立逻辑关联**
+
+  通过引用关系将多个Item（如图像、元数据、缩略图）**绑定为逻辑整体** 。例如：
+
+  - 缩略图 → 主图像
+  - Exif元数据 → 对应图像
+  - 分片图像（Tiles） → 组合为完整图像
+
+* **支持复合内容**
+
+  实现复杂场景的关联，如：
+
+  - **实况照片** ：多帧图像 + 音频 + 深度图
+  - **分块存储** ：多个分片（Tile）拼合为大图
+  - **衍生内容** ：**HDR图像的主图与增益图**
+
+* **明确依赖关系**
+
+  解析器可根据引用链按需加载相关Item，避免冗余解析。
+
+结构：
+
+`iref` Box由多个**引用条目** 构成，每个条目包含以下字段
+
+| 字段名                | 大小（字节） | 描述                                                         |
+| --------------------- | ------------ | ------------------------------------------------------------ |
+| **引用类型（Type）**  | 4            | 4字符的引用类型标识（如`thmb`表示缩略图，`cdsc`表示内容描述引用） |
+| **引用数量（Count）** | 2或4         | 被引用的Item数量（版本0为2字节，版本1为4字节）               |
+| **From Item ID**      | 2或4         | **发起引用的Item ID** （如缩略图的ID）                       |
+| **To Item IDs**       | 2或4 × N     | **被引用的Item ID列表** （如主图像的ID）                     |
+
+常见引用类型：
+
+| 类型（4字符） | 用途示例                                       |
+| ------------- | ---------------------------------------------- |
+| **`thmb`**    | 缩略图引用主图像（From=缩略图ID，To=主图像ID） |
+| **`cdsc`**    | 内容描述引用（如Exif元数据引用对应的图像ID）   |
+| **`auxl`**    | 辅助图像引用（如深度图、透明度图引用主图像）   |
+| **`dimg`**    | 分片图像引用（多个分片Item引用到完整图像ID）   |
+| **`base`**    | 基础图像引用（如HDR图像的主图被增益图层引用）  |
+
+实际应用示例：
+
+场景1：缩略图关联主图像
+
+- **Item 1** ：主图像（ID=1，类型`hvc1`）
+- **Item 2** ：缩略图（ID=2，类型`hvc1`）
+
+`iref`条目 ：
+
+```
+Type='thmb', From=2, To=[1]
+```
+
+表示缩略图（ID=2）引用了主图像（ID=1）。
+
+场景2：Exif元数据关联图像
+
+- **Item 3** ：Exif元数据（ID=3，类型`Exif`）
+- **Item 1** ：主图像（ID=1）
+
+`iref`条目：
+
+```
+Type='cdsc', From=3, To=[1]
+```
+
+表示Exif元数据（ID=3）描述的是主图像（ID=1）。
+
+场景3：分片图像拼合
+
+- **Item 4** ：完整图像（ID=4，类型为`grid`）
+- **Item 5-8** ：分片图像（ID=5,6,7,8，类型为`hvc1/avc1`）
+
+`iref`条目 ：
+
+```
+Type='dimg', From=4, To=[5,6,7,8]
+```
+
+表示完整图像（ID=4）由分片5-8组合而成。可以通过查找`ipco` Box中Item 4对应的的Property，确定**行列数以及分片尺寸等**
+
+与其它Box的协作：
+
+1. **`iinf` Box**
+   通过`iinf`确定引用双方Item的类型（如确认From=2是缩略图，To=1是主图像）。
+2. **`iloc` Box**
+   结合`iloc`定位被引用Item的数据位置，实现关联数据的同步加载。
+3. **`meta` Box**
+   `iref`通常嵌套在`meta` Box中，作为文件元数据的一部分。
+
+
+
+##### 2.3.9  grpl(GroupsListBox)
+
+根据HEIF（ISO/IEC 23008-12）标准，`GroupsListBox`（FourCC为`grpl`）是`MetaBox`的子Box之一，**将多个Item（如图像、音频、文本）组织成逻辑组** ，以实现内容的分层管理或关联表达。
 
 **`GroupsListBox`的作用** ：
 
@@ -277,54 +671,6 @@ GroupId: 100
 Type: 'altr'
 EntityIds: [1, 2, 3]
 ```
-
-##### 2.3.3 iinf(ItemInfoBox)
-
-​	`ItemInfoBox`用于存储项目信息，`grid`和`iovl`属于`iinf`的两种项目类型，其实际二进制数据在`idat(ItemDataBox)`或外部`mdat`中。
-
-* 关键字box功能：
-
-| Box 类型         | 四字符码 | 功能说明         | 与 grid/iovl 的关系                      |
-| :--------------- | :------- | :--------------- | :--------------------------------------- |
-| ItemInfoBox      | `iinf`   | **项目信息定义** | 定义项目 ID 和类型（grid/iovl）          |
-| ItemLocationBox  | `iloc`   | **数据位置索引** | 记录 grid/iovl 数据在 idat/mdat 中的偏移 |
-| ItemDataBox      | `idat`   | **内联数据存储** | 直接包含 grid/iovl 的二进制数据          |
-| ItemReferenceBox | `iref`   | **项目间引用**   | 管理 grid/iovl 引用的子图像（**dimg**）  |
-
-​	值得注意的是，`dimg(Drived Image Reference)`不是一种图像类型，而是**引用关系类型**，其本质是在 `ItemReferenceBox (iref)` 中定义的特殊引用类型，作用是标记衍生图像(grid/iovl)所依赖的基础图像。
-
-* `dimg`引用示例：
-
-```c++
-MetaBox
-├── iinf (项目信息)
-│   ├── ID=1: Type="grid"  // 网格派生图像
-│   ├── ID=11: Type="hvc1" // 基础图(左上)
-│   ├── ID=12: Type="hvc1" // 基础图(中上)
-│   └── ...(其他9个基础图)
-└── iref (项目引用)
-    └── dimg引用组:
-        Source=1 → Targets=[11,12,13,21,22,23,31,32,33]
-```
-
-* `iinf`数据流示例：
-
-```shell
-meta Box
-├── iinf Box
-│   └── Entry #42: {item_ID=42, item_type="grid"} // 声明grid项目
-├── iloc Box
-│   └── Location: {item_ID=42, offset=0x120, length=24} // 数据位置
-└── idat Box
-    └── [0x120] 00 01 02 03... // 实际二进制数据(由parseImageGrid解析)
-```
-
-* 为什么这样设计：
-  * 解耦元数据与数据：`iinf`定义项目属性，`iloc`定位数据，`idat/mdat`存储数据。
-  * 高效检索：不需要解析整个数据流即可获取项目类型，可以通过`iinf`快速过滤出`grid/iovl`项目
-  * 灵活存储：小数据可直接内联在`idat`，大数据可外链到`mdat`。
-
-HEIF数据的解析流程为：先通过`iinf(ItemInfoBox)获取项目类型`，在通过`iloc(ItemLocationBox)`定位数据，最终从`idat(ItemDataBox)`或`mdat(MediaDataBox)`中加载二进制流进行解析。
 
 #### 2.4 moov box
 

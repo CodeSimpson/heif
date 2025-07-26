@@ -69,8 +69,10 @@ bool HevcDecoderConfigurationRecord::makeConfigFromSPS(const Vector<uint8_t>& sr
 
     bitstr.readBits(4);                          // sps_video_parametr_set_id  -> not needed
     maxNumSubLayersMinus1 = bitstr.readBits(3);  // sps_max_sub_layers_minus1
-    mNumTemporalLayers    = static_cast<uint8_t>(maxNumSubLayersMinus1 + 1);
-    mTemporalIdNested     = static_cast<uint8_t>(bitstr.readBits(1));  // sps_temporal_id_nesting_flag
+    mNumTemporalLayers = 0; 
+    // mNumTemporalLayers    = static_cast<uint8_t>(maxNumSubLayersMinus1 + 1);
+    mTemporalIdNested = 0; static_cast<uint8_t>(bitstr.readBits(1)); 
+    // mTemporalIdNested     = static_cast<uint8_t>(bitstr.readBits(1));  // sps_temporal_id_nesting_flag
 
     // start profile_tier_level parsing
 
@@ -271,8 +273,10 @@ void HevcDecoderConfigurationRecord::parseConfig(ISOBMFF::BitStream& bitstr)
     mBitDepthChromaMinus8 = static_cast<uint8_t>(bitstr.readBits(3));
     mAvgFrameRate         = static_cast<uint16_t>(bitstr.readBits(16));
     mConstantFrameRate    = static_cast<uint8_t>(bitstr.readBits(2));
-    mNumTemporalLayers    = static_cast<uint8_t>(bitstr.readBits(3));
-    mTemporalIdNested     = static_cast<uint8_t>(bitstr.readBits(1));
+    mNumTemporalLayers = 0; static_cast<uint8_t>(bitstr.readBits(3));
+    // mNumTemporalLayers    = static_cast<uint8_t>(bitstr.readBits(3));
+    mTemporalIdNested = 0; static_cast<uint8_t>(bitstr.readBits(1));
+    // mTemporalIdNested     = static_cast<uint8_t>(bitstr.readBits(1));
     mLengthSizeMinus1     = static_cast<uint8_t>(bitstr.readBits(2));
 
     numOfArrays = bitstr.readBits(8);
