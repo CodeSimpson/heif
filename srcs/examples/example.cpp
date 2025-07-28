@@ -568,85 +568,64 @@ void example8()
     Reader::Destroy(reader);
 }
 
-// Array<DecoderSpecificInfo> getCsdData(const uint8_t* buffer, uint32_t bufferSize, uint32_t& csdSize) {
-//     Array<DecoderSpecificInfo> csdData(3);
-//     bool vpsFound = false, spsFound = false, ppsFound = false;
-
-//     for (uint32_t i = 0; i < bufferSize; ) {
-//         // 检测3/4字节起始码
-//         bool isStartCode = false;
-//         uint32_t startCodeLen = 0;
+void convertAnnexBToLengthPrefix(std::vector<uint8_t>& buffer) {
+    uint32_t bufferSize = buffer.size();
+    for (uint32_t i = 0; i < bufferSize; ) {
+        // 检测3/4字节起始码
+        bool isStartCode = false;
+        uint32_t startCodeLen = 0;
         
-//         if (i + 2 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && buffer[i+2] == 0x01) {
-//             startCodeLen = 3;
-//             isStartCode = true;
-//         } else if (i + 3 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && 
-//                    buffer[i+2] == 0x00 && buffer[i+3] == 0x01) {
-//             startCodeLen = 4;
-//             isStartCode = true;
-//         }
+        if (i + 2 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && buffer[i+2] == 0x01) {
+            startCodeLen = 3;
+            isStartCode = true;
+        } else if (i + 3 < bufferSize && buffer[i] == 0x00 && buffer[i+1] == 0x00 && 
+                   buffer[i+2] == 0x00 && buffer[i+3] == 0x01) {
+            startCodeLen = 4;
+            isStartCode = true;
+        }
 
-//         if (!isStartCode) {
-//             i++;
-//             continue;
-//         }
+        if (!isStartCode) {
+            i++;
+            continue;
+        }
 
-//         uint32_t nalStart = i;
-//         i += startCodeLen; // 跳过起始码
-//         if (i >= bufferSize) break;
+        uint32_t nalStart = i;
+        i += startCodeLen; // 跳过起始码
+        if (i >= bufferSize) break;
 
-//         uint8_t nalType = (buffer[i] >> 1) & 0x3F;
-//         i++; // 移动到NAL数据区
+        uint8_t nalType = (buffer[i] >> 1) & 0x3F;
+        // i++; // 移动到NAL数据区
 
-//         // 查找下一个起始码
-//         uint32_t nalEnd = bufferSize;
-//         for (uint32_t j = i; j < bufferSize; ++j) {
-//             if (j + 2 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && buffer[j+2] == 0x01) {
-//                 nalEnd = j - startCodeLen + 1;
-//                 break;
-//             } else if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && 
-//                       buffer[j+2] == 0x00 && buffer[j+3] == 0x01) {
-//                 nalEnd = j;
-//                 break;
-//             }
-//         }
+        // 查找下一个起始码
+        uint32_t nalEnd = bufferSize;
+        for (uint32_t j = i; j < bufferSize; ++j) {
+            if (j + 2 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && buffer[j+2] == 0x01) {
+                nalEnd = j - startCodeLen + 1;
+                break;
+            } else if (j + 3 < bufferSize && buffer[j] == 0x00 && buffer[j+1] == 0x00 && 
+                      buffer[j+2] == 0x00 && buffer[j+3] == 0x01) {
+                nalEnd = j;
+                break;
+            }
+        }
+        // 提取NAL数据（不包含起始码）
+        uint32_t nalSize = nalEnd - nalStart - startCodeLen;
+        if (startCodeLen == 4) {
+            buffer[i - startCodeLen] = ((nalSize >> 24) & 0xFF);
+            buffer[i - startCodeLen + 1] = ((nalSize >> 16) & 0xFF);
+            buffer[i - startCodeLen + 2] = ((nalSize >> 8) & 0xFF);
+            buffer[i - startCodeLen + 3] = (nalSize & 0xFF);
+        } else if (startCodeLen == 3) {
+            buffer[i - startCodeLen] = ((nalSize >> 16) & 0xFF);
+            buffer[i - startCodeLen + 1] = ((nalSize >> 8) & 0xFF);
+            buffer[i - startCodeLen + 2] = (nalSize & 0xFF);
+        } else {
+            cout << "error: startCodeLen = " << startCodeLen << endl;
+        }
 
-//         // 提取NAL数据（包含起始码）
-//         uint32_t nalSize = nalEnd - nalStart;
-//         switch (nalType) {
-//             case 32: // VPS
-//                 if (!vpsFound) {
-//                     csdData[0].decSpecInfoType = DecoderSpecInfoType::HEVC_VPS;
-//                     csdData[0].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
-//                     vpsFound = true;
-//                 }
-//                 break;
-//             case 33: // SPS
-//                 if (!spsFound) {
-//                     csdData[1].decSpecInfoType = DecoderSpecInfoType::HEVC_SPS;
-//                     csdData[1].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
-//                     spsFound = true;
-//                 }
-//                 break;
-//             case 34: // PPS
-//                 if (!ppsFound) {
-//                     csdData[2].decSpecInfoType = DecoderSpecInfoType::HEVC_PPS;
-//                     csdData[2].decSpecInfoData = Array<uint8_t>(buffer + nalStart, buffer + nalEnd);
-//                     ppsFound = true;
-//                 }
-//                 break;
-//         }
-
-//         i = nalEnd; // 跳转到下一个单元
-//         if (vpsFound && spsFound && ppsFound) break;
-//     }
-
-//     csdSize = csdData[0].decSpecInfoData.size + 
-//              csdData[1].decSpecInfoData.size + 
-//              csdData[2].decSpecInfoData.size;
-//     cout << "vpsSize:" << csdData[0].decSpecInfoData.size << " spsSize:" << csdData[1].decSpecInfoData.size << " ppsSize:" << csdData[2].decSpecInfoData.size << endl;
-//     return csdData;
-// }
+        i = nalEnd; // 跳转到下一个单元
+    }
+}
 
 Array<DecoderSpecificInfo> getCsdData(const uint8_t* buffer, uint32_t bufferSize, uint32_t& csdSize) {
     uint32_t spsSize = 0;
@@ -812,6 +791,7 @@ void example9()
     {
         auto& tileData = primaryHeicBuffer.front();
         cout << "primage iamge gridSize:" << tileData.size() << endl;
+        convertAnnexBToLengthPrefix(tileData);
         // 封装分块数据
         Data mediaData;
         mediaData.mediaFormat = MediaFormat::HEVC;
