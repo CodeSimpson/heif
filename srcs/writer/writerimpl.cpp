@@ -269,7 +269,7 @@ namespace HEIF
     ErrorCode WriterImpl::validateFedMediaData(const Data& aData)
     {
         if ((((aData.mediaFormat == MediaFormat::AVC) || (aData.mediaFormat == MediaFormat::HEVC) ||
-              (aData.mediaFormat == MediaFormat::AAC)) &&
+              (aData.mediaFormat == MediaFormat::AAC) || aData.mediaFormat == MediaFormat::TMAP) &&
              !mAllDecoderConfigs.count(aData.decoderConfigId)) &&
             !(aData.mediaFormat == MediaFormat::JPEG))
         {
@@ -352,6 +352,10 @@ namespace HEIF
             {
                 return ErrorCode::OK;
             }
+        }
+        else if (aData.mediaFormat == MediaFormat::TMAP)
+        {
+            // do nothing
         }
         return ErrorCode::OK;
     }

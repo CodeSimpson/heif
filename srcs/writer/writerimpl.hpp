@@ -83,6 +83,7 @@ namespace HEIF
         ErrorCode addMetadataItemReference(const MetadataItemId& metadataItemId, const ImageId& toImageId) override;
         ErrorCode addTbasItemReference(const ImageId& fromImageId, const ImageId& toImageId) override;
         ErrorCode addBaseItemReference(const ImageId& fromImageId, const Array<ImageId>& toImageIds) override;
+        ErrorCode addDimgItemReference(const ImageId& fromImageId, const Array<ImageId>& toImageIds) override;
         ErrorCode addAuxiliaryReference(const ImageId& fromImageId, const ImageId& toImageId) override;
         ErrorCode setImageHidden(const ImageId& imageId, const bool hidden) override;
 

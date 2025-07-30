@@ -735,8 +735,8 @@ void example9()
         // 获取文件大小并调整vector容量
         std::streamsize size = file.tellg();
         file.seekg(0, std::ios::beg);
-        isoMetadataBitstream.resize(size);
-        if (file.read(reinterpret_cast<char*>(isoMetadataBitstream.data()), size)) {
+        isoMetadataBitstream.resize(size + 1);
+        if (file.read(reinterpret_cast<char*>(isoMetadataBitstream.data()) + 1, size)) {
             std::cout << "all characters from isoMetadataBitstream read successfully." << std::endl;
         } else {
             std::cout << "error: only" << file.gcount() << " could be read" << std::endl;
@@ -746,22 +746,25 @@ void example9()
     std::cout << "primaryHeicBuffer size:" << primaryHeicBuffer.size() << " gainmapHeicBuffer size:"<< gainmapHeicBuffer.size()
               << " isoMetadataBitstream size:" << isoMetadataBitstream.size() << std::endl;
 
-    // 初始化参数
+    // 初始化主图参数
     const uint32_t tileWidth = 512;
     const uint32_t tileHeight = 512;
     const uint32_t fullWidth = 3072;
     const uint32_t fullHeight = 4096;
+    // 初始化gainmap图参数
+    const uint32_t gainmapFullWidth = 1536;
+    const uint32_t gainmapFullHeight = 2048;
 
     // 创建Writer实例
     Writer* writer = Writer::Create();
     OutputConfig writerOutputConf{};
     writerOutputConf.fileName = "IMG_20250725_173515_Nokia.HEIC";
-    writerOutputConf.progressiveFile = false;
+    writerOutputConf.progressiveFile = true;
     writerOutputConf.majorBrand = "heic";
-    writerOutputConf.compatibleBrands = Array<FourCC>(2);
+    writerOutputConf.compatibleBrands = Array<FourCC>(3);
     writerOutputConf.compatibleBrands[0] = FourCC("mif1");
     writerOutputConf.compatibleBrands[1] = FourCC("heic");
-    // writerOutputConf.compatibleBrands[2] = FourCC("tmap");
+    writerOutputConf.compatibleBrands[2] = FourCC("tmap");
 
     // 初始化Writer
     if(writer->initialize(writerOutputConf) != ErrorCode::OK) {
@@ -770,6 +773,7 @@ void example9()
         return;
     }
 
+    // ============================================== primary image ==============================================
     // 准备HEVC解码配置
     uint32_t csdDataSize = 0;
     Array<DecoderSpecificInfo> decoderConfig = getCsdData(primaryHeicBuffer.front().data(), primaryHeicBuffer.front().size(), csdDataSize);
@@ -846,6 +850,180 @@ void example9()
     if(writer->setPrimaryItem(gridId) != ErrorCode::OK) {
         cout << "setPrimaryItem failed!" << endl;
         return;
+    }
+
+    // add pixi property
+    PixelInformation pixi;
+    Array<uint8_t> bitsPerChannel(3);
+    bitsPerChannel[0] = 8;
+    bitsPerChannel[1] = 8;
+    bitsPerChannel[2] = 8;
+    pixi.bitsPerChannel = bitsPerChannel;
+    PropertyId pixiPropertyId = 0;
+    writer->addProperty(pixi, pixiPropertyId);
+    writer->associateProperty(gridId, pixiPropertyId, true);
+
+    // add colr property
+    ColourInformation colr;
+    colr.colourType = "nclx";
+    colr.colourPrimaries = 12;
+    colr.transferCharacteristics = 13;
+    colr.matrixCoefficients = 2;
+    colr.fullRangeFlag = 1;
+    PropertyId colrPropertyId = 0;
+    writer->addProperty(colr, colrPropertyId);
+    writer->associateProperty(gridId, colrPropertyId, true);
+
+
+    // =========================================== gainmap image ===============================================
+    uint32_t gainmapCsdDataSize = 0;
+    Array<DecoderSpecificInfo> gainmapDecoderConfig = getCsdData(gainmapHeicBuffer.front().data(), gainmapHeicBuffer.front().size(), gainmapCsdDataSize);
+    cout << "read csd data size:" << gainmapCsdDataSize << " decoderConfig size:" << gainmapDecoderConfig.size << endl;
+    DecoderConfigId gainmapDecoderConfigId;
+
+    if(writer->feedDecoderConfig(gainmapDecoderConfig, gainmapDecoderConfigId) != ErrorCode::OK) {
+        cout << "feedGainmapDecoderConfig failed!" << endl;
+        return;
+    }
+
+    // 存储所有分块ImageID
+    std::vector<ImageId> gainmapTileIds;
+    const uint32_t gainmapCols = gainmapFullWidth / tileWidth;  // 3列
+    const uint32_t gainmapRows = gainmapFullHeight / tileHeight; // 4行
+
+    // 处理所有分块
+    while(!gainmapHeicBuffer.empty())
+    {
+        auto& tileData = gainmapHeicBuffer.front();
+        cout << "gainmap iamge gridSize:" << tileData.size() << endl;
+        convertAnnexBToLengthPrefix(tileData);
+        // 封装分块数据
+        Data mediaData;
+        mediaData.mediaFormat = MediaFormat::HEVC;
+        mediaData.data = tileData.data();
+        mediaData.size = static_cast<uint32_t>(tileData.size());
+        mediaData.decoderConfigId = gainmapDecoderConfigId;
+
+        MediaDataId mediaDataId;
+        ErrorCode ret = writer->feedMediaData(mediaData, mediaDataId);
+        if(ret != ErrorCode::OK) {
+            cout << "feedMediaData failed! ret:" << static_cast<int>(ret) << endl;
+            return;
+        }
+
+        // 添加为图像项
+        ImageId tileId;
+        if(writer->addImage(mediaDataId, tileId) != ErrorCode::OK) {
+            cout << "addImage failed!" << endl;
+            return;
+        }
+        if (writer->setImageHidden(tileId, true) != ErrorCode::OK) {
+            cout << "setImageHidden failed!" << endl;
+            return;
+        }
+
+        cout << "gainmapMediaDataId:" <<  mediaDataId.get() << " tileId:" << tileId.get() << endl;
+        gainmapTileIds.push_back(tileId);
+        gainmapHeicBuffer.pop();
+    }
+
+    // 创建网格组合
+    Grid gainmapGrid;
+    gainmapGrid.columns = gainmapCols;          // 3列
+    gainmapGrid.rows = gainmapRows;             // 4行
+    gainmapGrid.outputWidth = gainmapFullWidth; // 总宽度1536
+    gainmapGrid.outputHeight = gainmapFullHeight;// 总高度2048
+    cout << "gridrows:" << gainmapGrid.rows << " gridCols:" << gainmapGrid.columns << endl;
+    gainmapGrid.imageIds = Array<ImageId>(gainmapTileIds.size());
+    for (uint32_t i = 0; i < gainmapTileIds.size(); ++i)
+    {
+        gainmapGrid.imageIds[i] = gainmapTileIds[i];
+    }
+
+    // 添加网格派生图像
+    ImageId gainmapGridId;
+    if(writer->addDerivedImageItem(gainmapGrid, gainmapGridId) != ErrorCode::OK) {
+        cout << "addDerivedImageItem failed!" << endl;
+        return;
+    }
+
+    // add pixi property
+    PixelInformation gainmapPixi;
+    Array<uint8_t> gainmapbBitsPerChannel(1);
+    gainmapbBitsPerChannel[0] = 8;
+    // gainmapbBitsPerChannel[1] = 8;
+    // gainmapbBitsPerChannel[2] = 8;
+    gainmapPixi.bitsPerChannel = gainmapbBitsPerChannel;
+    PropertyId gainmapPixiPropertyId = 0;
+    writer->addProperty(gainmapPixi, gainmapPixiPropertyId);
+    writer->associateProperty(gainmapGridId, gainmapPixiPropertyId, true);
+
+    // add colr property
+    ColourInformation gainmapColr;
+    gainmapColr.colourType = "nclx";
+    gainmapColr.colourPrimaries = 2;
+    gainmapColr.transferCharacteristics = 2;
+    gainmapColr.matrixCoefficients = 2;
+    gainmapColr.fullRangeFlag = 1;
+    PropertyId gainmapColrPropertyId = 0;
+    writer->addProperty(gainmapColr, gainmapColrPropertyId);
+    writer->associateProperty(gainmapGridId, gainmapColrPropertyId, true);
+
+    // ===================================== tmap ==========================================
+    if (!isoMetadataBitstream.empty()) {
+        cout << "tmap size:" << isoMetadataBitstream.size() << endl;
+
+        // 封装tmap数据
+        Data mediaData;
+        mediaData.mediaFormat = MediaFormat::TMAP;
+        mediaData.data = isoMetadataBitstream.data();
+        mediaData.size = isoMetadataBitstream.size();
+        mediaData.decoderConfigId = gainmapDecoderConfigId;
+
+        MediaDataId mediaDataId;
+        ErrorCode ret = writer->feedMediaData(mediaData, mediaDataId);
+        if(ret != ErrorCode::OK) {
+            cout << "feedMediaData failed! ret:" << static_cast<int>(ret) << endl;
+            return;
+        }
+
+        // create new image based on that data:
+        ImageId metaImageId;
+        writer->addImage(mediaDataId, metaImageId);
+
+        // add pixi property
+        PixelInformation tmapPixi;
+        Array<uint8_t> bitsPerChannel(3);
+        bitsPerChannel[0] = 8;
+        bitsPerChannel[1] = 8;
+        bitsPerChannel[2] = 8;
+        tmapPixi.bitsPerChannel = bitsPerChannel;
+        PropertyId tmapPixiPropertyId = 0;
+        writer->addProperty(tmapPixi, tmapPixiPropertyId);
+        writer->associateProperty(metaImageId, tmapPixiPropertyId, true);
+
+        // add colr property
+        ColourInformation tmapColr;
+        tmapColr.colourType = "nclx";
+        tmapColr.colourPrimaries = 12;
+        tmapColr.transferCharacteristics = 13;
+        tmapColr.matrixCoefficients = 2;
+        tmapColr.fullRangeFlag = 1;
+        PropertyId tmapColrPropertyId = 0;
+        writer->addProperty(tmapColr, tmapColrPropertyId);
+        writer->associateProperty(metaImageId, tmapColrPropertyId, true);
+
+        // 添加对主图和gainmap图的引用
+        Array<ImageId> toImageIds(2);
+        toImageIds[0] = gridId;
+        toImageIds[1] = gainmapGridId;
+        writer->addDimgItemReference(metaImageId, toImageIds);
+
+        // add alternaltive entity
+        GroupId altrId;
+        writer->createAlternativesGroup(altrId);
+        writer->addToGroup(altrId, metaImageId);
+        writer->addToGroup(altrId, gridId);
     }
 
     // 最终封装

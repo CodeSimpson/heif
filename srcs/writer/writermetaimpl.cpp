@@ -193,7 +193,8 @@ namespace HEIF
         };
         const map<MediaFormat, FormatNames> formatMapping = {{MediaFormat::AVC, {FourCCInt("avc1"), ""}},
                                                              {MediaFormat::HEVC, {FourCCInt("hvc1"), ""}},
-                                                             {MediaFormat::JPEG, {FourCCInt("jpeg"), ""}}};
+                                                             {MediaFormat::JPEG, {FourCCInt("jpeg"), ""}},
+                                                             {MediaFormat::TMAP, {FourCCInt("tmap"), ""}}};
 
         const FormatNames& format = formatMapping.at(mediaData.mediaFormat);
 
@@ -230,6 +231,23 @@ namespace HEIF
             const ImageSize& size        = mJpegDimensions.at(aMediaDataId);
             const auto ispePropertyIndex = getIspeIndex(size.width, size.height);
             mMetaBox.addProperty(ispePropertyIndex, {aImageId.get()}, false);
+        }
+        else if (mediaData.mediaFormat == MediaFormat::TMAP)
+        {
+            uint16_t configPropertyIndex;
+            ErrorCode error = getConfigIndex(mediaData.decoderConfigId, configPropertyIndex);
+            if (error != ErrorCode::OK)
+            {
+                return error;
+            }
+            const auto imageSize         = mDecoderConfigIndexToSize[configPropertyIndex];
+            const auto width             = imageSize.width;
+            const auto height            = imageSize.height;
+            std::cout << "ispe tmap width:" << width << " height:" << height << std::endl;
+            const auto ispePropertyIndex = getIspeIndex(width, height);
+            // hvcC box，tmap不需要
+            // mMetaBox.addProperty(configPropertyIndex, {aImageId.get()}, true);
+            mMetaBox.addProperty(ispePropertyIndex, {aImageId.get()}, true);
         }
 
         if (!mInitialMdat)
@@ -1053,6 +1071,27 @@ namespace HEIF
 
         return ErrorCode::OK;
     }
+
+    ErrorCode WriterImpl::addDimgItemReference(const ImageId& fromImageId, const Array<ImageId>& toImageIds)
+    {
+        if (mState != State::WRITING)
+        {
+            return ErrorCode::UNINITIALIZED;
+        }
+
+        if (!checkImageIds({fromImageId}) || !checkImageIds(toImageIds))
+        {
+            return ErrorCode::INVALID_ITEM_ID;
+        }
+
+        for (const auto toImageId : toImageIds)
+        {
+            mMetaBox.addItemReference("dimg", fromImageId.get(), toImageId.get());
+        }
+
+        return ErrorCode::OK;
+    }
+
 
     ErrorCode WriterImpl::addMetadata(const MediaDataId& mediaDataId, MetadataItemId& metadataItemId)
     {

@@ -448,20 +448,43 @@ iprp Box (Item Properties Box)
 
 子box详解：
 
-* `ipco` Box（属性定义库）
+###### 2.3.6.1 `ipco` Box（属性定义库）
 
-  存储所有属性类型，每个属性通过为一索引标识。
+存储所有属性类型，每个属性通过为一索引标识。
 
-  | 属性类型                       | 作用示例                        |
-  | ------------------------------ | ------------------------------- |
-  | `rrot` (Rotation)              | 定义图像旋转角度（90°, 180°等） |
-  | `colr` (Color)                 | 指定色彩空间（sRGB、Rec.2020）  |
-  | `imir` (Mirror)                | 镜像翻转（水平/垂直）           |
-  | `clap` (Clean Aperture)        | 裁剪区域定义                    |
-  | `ispe` (Image Spatial Extents) | 图像分辨率（宽高）              |
-  | 自定义属性                     | 厂商扩展（如Apple的增益图参数） |
+| 属性类型                       | 作用示例                        |
+| ------------------------------ | ------------------------------- |
+| `rrot` (Rotation)              | 定义图像旋转角度（90°, 180°等） |
+| `colr` (Color)                 | 指定色彩空间（sRGB、Rec.2020）  |
+| `imir` (Mirror)                | 镜像翻转（水平/垂直）           |
+| `clap` (Clean Aperture)        | 裁剪区域定义                    |
+| `ispe` (Image Spatial Extents) | 图像分辨率（宽高）              |
+| 自定义属性                     | 厂商扩展（如Apple的增益图参数） |
 
-* `ipma` Box（属性关联库）
+* colr box结构体
+
+```c++
+struct ColourInformation {
+    FourCC colourType;                   // [核心] 颜色信息类型标识，决定后续字段的解析方式，常见值：nclx/rICC/prof，nclx表示使用标准化的视频颜色参数
+    uint16_t colourPrimaries;            // [nclx] 色域标准，nclx专用参数，定义三原色色度坐标，1=BT.709，9=BT.2020，
+    uint16_t transferCharacteristics;    // [nclx] 光电转换特性，定义光电转换函数，1=BT.709，16=PQ(HDR)，18=HLG，
+    uint16_t matrixCoefficients;         // [nclx] RGB/YUV转换矩阵，1=BT.709，9=BT.2020
+    bool fullRangeFlag;                  // [nclx] 亮度范围标识，true=0-255（全范围），false=16-235（有限范围）
+    Array<uint8_t> iccProfile;           // [ICC] 颜色配置文件数据
+};
+```
+
+google给的样张中gainmap部分nclx三个参数都为2，具体意义如下：	
+
+​	colourPrimaries = 2：表示**Unspecified Video** （未指定的视频色域），表示色域信息未明确指定，解码器应使用**默认或上下文相关的色域** （通常回退到 BT.709/sRGB）。
+
+​	transferCharacteristics = 2：表示**Unspecified Video** （未指定的光电转换特性），未定义光电转换函数（OETF/EOTF），解码器需**自行推断或使用默认曲线** （通常假设为 BT.709 的伽马曲线）。
+
+​	matrixCoefficients = 2：表示**Unspecified** （未指定的矩阵系数），YUV↔RGB转换矩阵未定义，解码器应**优先采用 BT.601 或 BT.709 矩阵** （取决于分辨率）。
+
+
+
+###### 2.3.6.2 `ipma` Box（属性关联库）
 
 ​	**映射Item与属性** ：每个条目通过`item_ID`关联一个Item，并列出其所有属性索引（指向`ipco`中的属性）。
 

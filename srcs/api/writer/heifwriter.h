@@ -415,6 +415,14 @@ namespace HEIF
         virtual ErrorCode addBaseItemReference(const ImageId& fromImageId, const Array<ImageId>& toImageIds) = 0;
 
         /**
+         * Set 'dimg' item references for a pre-derived coded image.
+         * @param fromImageId ImageId of the pre-derived coded image.
+         * @param toImageIds  ImageId's of images the pre-derived coded image derives from.
+         * @return ErrorCode: OK, UNINITIALIZED or INVALID_ITEM_ID
+         */
+        virtual ErrorCode addDimgItemReference(const ImageId& fromImageId, const Array<ImageId>& toImageIds) = 0;
+
+        /**
          * Set an image as an auxiliary image of another image.
          * Adds item reference of type 'auxl' from the auxiliary image to the master image.
          * @param fromImageId ImageId of the auxiliary image.

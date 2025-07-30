@@ -77,7 +77,8 @@ namespace HEIF
                ///< 23008-12:2017(E)).
         XMP,   ///< XMP Metadata binary data (Annex A.3 in HEIF ISO/IEC 23008-12:2017(E) spec for details).
         MPEG7,  ///< MPEG-7 Metadata binary data (Annex A.4 in HEIF ISO/IEC 23008-12:2017(E) spec for details).
-        AAC     ///< AAC-LC audio track data.
+        AAC,     ///< AAC-LC audio track data.
+        TMAP     ///< UltraHDR Metadata.
     };
 
     struct HEIF_DLL_PUBLIC Data
