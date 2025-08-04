@@ -280,7 +280,8 @@ namespace HEIF
         MovieBox mMovieBox;
         MediaDataBox mMediaDataBox;
 
-        OutputStreamInterface* mFile;
+        OutputStreamInterface* mFile;   // 文件流
+        OutputStreamInterface* mMemory; // 内存流
 
         std::uint64_t mMdatOffset    = 0;  ///< 'mdat' offset in the stream
         std::uint64_t mMediaDataSize = 8;  ///< Data size in 'mdat' box in bytes.

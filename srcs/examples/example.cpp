@@ -758,7 +758,9 @@ void example9()
     // 创建Writer实例
     Writer* writer = Writer::Create();
     OutputConfig writerOutputConf{};
-    writerOutputConf.fileName = "IMG_20250725_173515_Nokia.HEIC";
+    writerOutputConf.fileName = "";
+    writerOutputConf.outputStream = nullptr;
+    writerOutputConf.memoryOutputStream = ConstructMemoryStream();
     writerOutputConf.progressiveFile = true;
     writerOutputConf.majorBrand = "heic";
     writerOutputConf.compatibleBrands = Array<FourCC>(3);
@@ -1031,6 +1033,8 @@ void example9()
         cout << "finalize failed!" << endl;
         return;
     }
+
+    cout << "image size:" << writerOutputConf.memoryOutputStream->size() << endl;
 
     // 清理资源
     Writer::Destroy(writer);

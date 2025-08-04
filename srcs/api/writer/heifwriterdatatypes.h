@@ -37,7 +37,7 @@ namespace HEIF
          * Output stream interface
          * If set all writes will be directed here*/
         OutputStreamInterface* outputStream = nullptr;
-
+        OutputStreamInterface* memoryOutputStream = nullptr;
         /**
          * If true: then all file data is kept in memory until finalize() is called.
          * Order of boxes ('ftyp', 'meta' and possible 'moov' boxes are before MediaDataBox ('mdat'),

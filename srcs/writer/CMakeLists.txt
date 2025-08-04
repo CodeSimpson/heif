@@ -31,6 +31,7 @@ else()
 endif()
 
 set(WRITER_SRCS
+    memoryouputstream_std.cpp
     idgenerators.cpp
     refsgroup.cpp
     samplegroup.cpp
@@ -59,6 +60,7 @@ set(API_HDRS
     )
 
 set(WRITER_HDRS
+    memoryoutputstream.hpp
     fileoutputstream.hpp
     idgenerators.hpp
     refsgroup.hpp

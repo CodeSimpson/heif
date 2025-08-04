@@ -46,6 +46,10 @@ namespace HEIF
          */
         virtual void remove() = 0;
 
+        // 获取底层内存指针
+        virtual const uint8_t* data() = 0;
+        virtual std::uint64_t size() = 0;
+
     protected:
         OutputStreamInterface()        = default;                                 // ctor
         OutputStreamInterface& operator=(const OutputStreamInterface&) = delete;  // copy assignment
@@ -55,5 +59,7 @@ namespace HEIF
     };
 
     OutputStreamInterface* ConstructFileStream(const char* aFilename);
+
+    HEIF_DLL_PUBLIC OutputStreamInterface* ConstructMemoryStream();
 }  // namespace HEIF
 #endif

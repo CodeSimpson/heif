@@ -100,12 +100,14 @@ namespace HEIF
         , mMediaDataBox()
     {
         mFile = nullptr;
+        mMemory = nullptr;
     }
 
     WriterImpl::~WriterImpl()
     {
         clear();
         delete mFile;
+        delete mMemory;
     }
 
     void WriterImpl::clear()
@@ -145,6 +147,10 @@ namespace HEIF
             mFile->remove();
             delete mFile;
             mFile = nullptr;
+
+            mMemory->remove();
+            delete mMemory;
+            mMemory = nullptr;
         }
 
         mState = State::UNINITIALIZED;
@@ -177,9 +183,15 @@ namespace HEIF
         mWriteItemCreationTimes = outputConfig.itemCreationTimes;   // 是否记录图像项的创建时间
 
         mFile = nullptr;
+        mMemory = nullptr;
         if (outputConfig.outputStream)
         {
             mFile             = outputConfig.outputStream;
+            mOwnsOutputHandle = false;
+        }
+        else if (outputConfig.memoryOutputStream)
+        {
+            mMemory           = outputConfig.memoryOutputStream;
             mOwnsOutputHandle = false;
         }
         else if ((outputConfig.fileName) && (outputConfig.fileName[0] != 0))
@@ -187,7 +199,7 @@ namespace HEIF
             mFile             = ConstructFileStream(outputConfig.fileName); // 构造文件输出流对象
             mOwnsOutputHandle = true;
         }
-        if (mFile == nullptr)
+        if (mFile == nullptr && mMemory == nullptr)
         {
             return ErrorCode::FILE_OPEN_ERROR;
         }
@@ -221,16 +233,17 @@ namespace HEIF
             {
                 mExtendedTypeBox.writeBox(output);
             }
-            writeBitstream(output, mFile);  // 将ftyp盒子数据写入文件
+            OutputStreamInterface* pOutputStream = (mFile != nullptr ? mFile : mMemory);
+            writeBitstream(output, pOutputStream);  // 将ftyp盒子数据写入文件
 
             // Write Media Data Box 'mdat' header. We can not know input data size, so use 64-bit large size field for
             // the box.
-            mMdatOffset = static_cast<uint64_t>(mFile->tellp());    // 记录mdat盒子在mFile的起始位置，此时mFile中的ofstream处于刚写完ftyp box，准备写mdat的阶段，正好记录mdat的起始地址
+            mMdatOffset = static_cast<uint64_t>(pOutputStream->tellp());    // 记录mdat盒子在mFile的起始位置，此时mFile中的ofstream处于刚写完ftyp box，准备写mdat的阶段，正好记录mdat的起始地址
             output.clear();         // 清空比特流
             output.write32Bits(1);  // size field, value 1 implies using largesize field instead.
             output.write32Bits(FourCCInt("mdat").getUInt32());  // boxtype field
             output.write64Bits(0);                              // largesize field，记录媒体数据大小，预留位置后续更新
-            writeBitstream(output, mFile);
+            writeBitstream(output, pOutputStream);
         }
 
         mState = State::WRITING;
@@ -417,8 +430,9 @@ namespace HEIF
 
             if (mInitialMdat)
             {
-                mediaData.offset = mFile->tellp();
-                mFile->write(aData.data, static_cast<uint64_t>(aData.size));
+                OutputStreamInterface* pOutputStream = (mFile != nullptr ? mFile : mMemory);
+                mediaData.offset = pOutputStream->tellp();
+                pOutputStream->write(aData.data, static_cast<uint64_t>(aData.size));
             }
             else
             {
@@ -627,14 +641,14 @@ namespace HEIF
             {
                 return error;
             }
-
+            OutputStreamInterface* pOutputStream = (mFile != nullptr ? mFile : mMemory);
             mMetaBox.writeBox(output);
-            writeBitstream(output, mFile);
+            writeBitstream(output, pOutputStream);
             output.clear();
             if (mMovieBox.getTrackBoxes().size() > 0)
             {
                 mMovieBox.writeBox(output);
-                writeBitstream(output, mFile);
+                writeBitstream(output, pOutputStream);
             }
         }
         else
@@ -661,8 +675,8 @@ namespace HEIF
             {
                 mExtendedTypeBox.writeBox(output);
             }
-
-            writeBitstream(output, mFile);
+            OutputStreamInterface* pOutputStream = (mFile != nullptr ? mFile : mMemory);
+            writeBitstream(output, pOutputStream);
             mdatOffset = output.getSize();
             output.clear();
             // Calculate meta box size.
@@ -681,31 +695,39 @@ namespace HEIF
 
             // Serialize meta box again, now with correct mdat offset, and write it.
             mMetaBox.writeBox(output);
-            writeBitstream(output, mFile);
+            writeBitstream(output, pOutputStream);
             output.clear();
             // Write optional moov box.
             if (mMovieBox.getTrackBoxes().size() > 0)
             {
                 mMovieBox.writeBox(output);
-                writeBitstream(output, mFile);
+                writeBitstream(output, pOutputStream);
                 output.clear();
             }
             // Finally write mdat.
 
             const std::pair<const ISOBMFF::BitStream&, const List<Vector<uint8_t>>&>& data =
                 mMediaDataBox.getSerializedData();
-            mFile->write(data.first.getStorage().data(), data.first.getStorage().size());
+            pOutputStream->write(data.first.getStorage().data(), data.first.getStorage().size());
             for (const auto& dataBlock : data.second)
             {
-                mFile->write(dataBlock.data(), static_cast<uint64_t>(dataBlock.size()));
+                pOutputStream->write(dataBlock.data(), static_cast<uint64_t>(dataBlock.size()));
             }
         }
         if (mOwnsOutputHandle)
         {
-            delete mFile;
+            if (mFile != nullptr)
+            {
+                delete mFile;
+            }
+            else if (mMemory != nullptr)
+            {
+                delete mMemory;
+            }
         }
 
         mFile = nullptr;
+        mMemory = nullptr;
 
         mState = State::UNINITIALIZED;
 
@@ -715,12 +737,13 @@ namespace HEIF
     void WriterImpl::finalizeMdatBox()
     {
         BitStream output;
-        const uint64_t position = mFile->tellp();
+        OutputStreamInterface* pOutputStream = (mFile != nullptr ? mFile : mMemory);
+        const uint64_t position = pOutputStream->tellp();
         output.write64Bits(position - mMdatOffset);
         const int64_t LARGESIZE_OFFSET = 8;
-        mFile->seekp(mMdatOffset + LARGESIZE_OFFSET);
-        writeBitstream(output, mFile);
-        mFile->seekp(position);
+        pOutputStream->seekp(mMdatOffset + LARGESIZE_OFFSET);
+        writeBitstream(output, pOutputStream);
+        pOutputStream->seekp(position);
     }
 
 }  // namespace HEIF

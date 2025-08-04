@@ -44,6 +44,9 @@ namespace HEIF
 
         String getFileName() const;
 
+        const uint8_t* data() { return nullptr; }
+
+        std::uint64_t size() { return 0; }
     private:
         String mFilename;
 
